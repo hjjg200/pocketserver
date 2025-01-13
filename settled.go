@@ -406,17 +406,22 @@ func showLoginForm(w http.ResponseWriter, r *http.Request) {
 			<style>
 html, body {
 	font-size: 24px;
+    height: 100vh;
 }
 input, button {
 	font-size: 1rem;
 }
+.flex {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+}
 			</style>
 		</head>
-		<body>
-			<h1>Please Enter Password</h1>
+		<body class="flex">
 			<form method="POST" action="/">
 				<div>
-					<input type="password" name="password" placeholder="Password" required />
+					<input id="password" type="password" name="password" placeholder="Password" required />
 				</div>
 				<div>
 					<label>
@@ -425,8 +430,15 @@ input, button {
 					</label>
 				</div>
 				</br>
-				<button type="submit">Submit</button>
+				<div class="flex">
+					<button type="submit">Submit</button>
+				</div>
 			</form>
+			<script>
+
+document.getElementById("password").focus();
+
+			</script>
 		</body>
 		</html>
 	`)

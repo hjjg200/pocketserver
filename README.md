@@ -25,7 +25,7 @@ A simple server built for use on iSH, an emulated linux on iOS.
 
 ## TODO
 
-- use https only cookie and store cookie value onto disk
+- list time, list details time
 - service worker for offline availability; Cache config per album
 - replay icon for retry; status timeout; graceful timeout; needs custom src handling for video, img, audio; default thumbnail and placeholder
 - Create album
