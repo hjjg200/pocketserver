@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 	"hash/crc32"
+	"sync"
 	"runtime"
 )
 
@@ -165,6 +166,79 @@ func recursiveNewName(dir string, fn string) string {
 
 
 
+func makeAuthCookie(val string, exp time.Time) *http.Cookie {
+	return &http.Cookie{
+		Name:     AUTH_COOKIE_NAME,
+		Value:    val,
+		Path:     "/",
+		Expires:  exp,
+		HttpOnly: true,
+		Secure:   true,
+	}
+}
+
+func loadAuthCookies() {
+
+	data, err := os.ReadFile(AUTH_JSON)
+	if err != nil {
+		logInfo("No auth cookies found")
+		data = []byte("{}")
+		must(os.WriteFile(AUTH_JSON, data, 0600))
+	}
+
+	gAuthInfo.ExpiryMap = make(map[string] time.Time)
+	must(json.Unmarshal(data, &gAuthInfo.ExpiryMap))
+
+	//
+	expired := false
+	now := time.Now()
+	for k, v := range gAuthInfo.ExpiryMap {
+		if now.After(v) {
+			delete(gAuthInfo.ExpiryMap, k)
+			logWarn("Cookie", k, "expired at", v)
+			expired = true
+		}
+	}
+	if expired {
+		must(storeAuthCookies())
+	}
+
+	logInfo("Loaded", len(gAuthInfo.ExpiryMap), "authenticated users")
+}
+
+func storeAuthCookies() error {
+	data, err := json.MarshalIndent(gAuthInfo.ExpiryMap, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	logInfo("Stored", len(gAuthInfo.ExpiryMap), "authenticated users")
+	return os.WriteFile(AUTH_JSON, data, 0600)
+}
+
+// Authentication middleware
+
+const BAD_TRIES_TOLERANCE	= 10
+const AUTH_COOKIE_NAME		= "auth"
+const AUTH_COOKIE_LIFE		= time.Hour * 24 * 3
+const AUTH_COOKIE_LENGTH	= 64
+
+type AuthInfo struct {
+	SessionPassword	string
+	ExpiryMap		map[string] time.Time
+	ExpiryMapMu		sync.Mutex
+	BadTries		int
+}
+var gAuthInfo AuthInfo
+
+type HTTPInfo struct {
+	Enabled				bool
+	EnablerRemoteIP		string // IPv4
+	LocalIPAtEnabled	string
+	RemoteIPAtEnabled	string
+}
+var gHTTPInfo HTTPInfo
+
 func authMiddleware(next http.Handler) http.Handler {
 
 	handleEnableHTTP := func(w http.ResponseWriter, r *http.Request) {
@@ -199,18 +273,6 @@ func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		now := time.Now()
-		if now.Sub(gAuthInfo.LastCleanup) > AUTH_CLEANUP_INTERVAL {
-			logDebug("Auth cleanup")
-			gAuthInfo.LastCleanup = now
-
-			gAuthInfo.ExpiryMapMu.Lock()
-			for key, val := range gAuthInfo.ExpiryMap {
-				if now.After(val) {
-					delete(gAuthInfo.ExpiryMap, key)
-				}
-			}
-			gAuthInfo.ExpiryMapMu.Unlock()
-		}
 
 		// Check for existing cookie
 		cookie, err := r.Cookie(AUTH_COOKIE_NAME)
@@ -218,6 +280,8 @@ func authMiddleware(next http.Handler) http.Handler {
 		if err == nil {
 			v := cookie.Value
 			if len(v) == AUTH_COOKIE_LENGTH {
+
+				gAuthInfo.ExpiryMapMu.Lock()
 				expiry, ok := gAuthInfo.ExpiryMap[v]
 
 				if ok {
@@ -228,25 +292,30 @@ func authMiddleware(next http.Handler) http.Handler {
 						updatedExpiry := now.Add(AUTH_COOKIE_LIFE)
 						http.SetCookie(w, makeAuthCookie(v, updatedExpiry))
 						
-						gAuthInfo.ExpiryMapMu.Lock()
 						gAuthInfo.ExpiryMap[v] = updatedExpiry
-						gAuthInfo.ExpiryMapMu.Unlock()
 
 						// If cookie exists and is valid, pass request to the main handler
 						//logHTTPRequest(r, -1, "VALID COOKIE")
 						next.ServeHTTP(w, r)
+
+						gAuthInfo.ExpiryMapMu.Unlock()
 						return
 
 					} else {
 						logHTTPRequest(r, -1, "COOKIE EXPIRED")
-						gAuthInfo.ExpiryMapMu.Lock()
 						delete(gAuthInfo.ExpiryMap, v)
-						gAuthInfo.ExpiryMapMu.Unlock()
 					}
 
 				} else {
 					logHTTPRequest(r, -1, "COOKIE EXPIRED")
 				}
+
+				err = storeAuthCookies()
+				if err != nil {
+					logHTTPRequest(r, -1, "failed to store auth cookies!")
+				}
+
+				gAuthInfo.ExpiryMapMu.Unlock()
 
 			} else {
 				logHTTPRequest(r, -1, "MALFORMED COOKIE")
@@ -285,6 +354,11 @@ func authMiddleware(next http.Handler) http.Handler {
 				
 				gAuthInfo.ExpiryMapMu.Lock()
 				gAuthInfo.ExpiryMap[newValue] = newExpiry
+				
+				err = storeAuthCookies()
+				if err != nil {
+					logHTTPRequest(r, -1, "failed to store auth cookies!")
+				}
 				gAuthInfo.ExpiryMapMu.Unlock()
 
 				// Check if the user wants HTTP

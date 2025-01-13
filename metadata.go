@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"encoding/json"
-	"slices"
 	"mime"
 )
 
@@ -308,19 +307,15 @@ func getMimeCategory(path string) string {
 		return ""
 	}
 
-	cat := ""
-
 	mimeType := mime.TypeByExtension(ext)
 	if mimeType == "" {
 		return ""
 	}
 
-	logDebug("MIME for", ext, "is", mimeType)
 	return strings.Split(mimeType, "/")[0]
 
-
-
-
+/*
+	cat := ""
 
 	videos := []string{
 		".mp4", ".webm", ".mov", ".mkv",
@@ -341,6 +336,7 @@ func getMimeCategory(path string) string {
 	}
 
 	return cat
+*/
 
 }
 

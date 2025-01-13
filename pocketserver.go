@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sync"
 	"runtime"
 	"sync/atomic"
 	"mime"
@@ -29,6 +28,10 @@ var gEmbedStaticEtags map[string]string
 // General app context
 const METADATA_DIR = "./metadata"
 const UPLOADS = "./uploads"
+const CERT_PEM = "cert.pem"
+const KEY_PEM = "key.pem"
+const AUTH_JSON = "auth.json"
+
 const CONTEXT_KEY_REQUEST_ID = 0
 const QUERY_ALBUM = "album"
 const QUERY_THUMBNAIL = "thumbnail"
@@ -331,40 +334,6 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
-// Authentication middleware
-
-const BAD_TRIES_TOLERANCE = 10
-const AUTH_CLEANUP_INTERVAL = time.Hour
-const AUTH_COOKIE_NAME = "auth"
-const AUTH_COOKIE_LIFE = time.Hour * 24
-const AUTH_COOKIE_LENGTH = 32
-
-type AuthInfo struct {
-	SessionPassword string
-	ExpiryMap map[string] time.Time
-	ExpiryMapMu sync.Mutex
-	BadTries int
-	LastCleanup time.Time
-}
-var gAuthInfo AuthInfo
-
-type HTTPInfo struct {
-	Enabled bool
-	EnablerRemoteIP string // IPv4
-	LocalIPAtEnabled string
-	RemoteIPAtEnabled string
-}
-var gHTTPInfo HTTPInfo
-
-func makeAuthCookie(val string, exp time.Time) *http.Cookie {
-	return &http.Cookie{
-		Name:     AUTH_COOKIE_NAME,
-		Value:    val,
-		Path:     "/",
-		Expires:  exp,
-		HttpOnly: true,
-	}
-}
 
 type responseWriter struct {
 	http.ResponseWriter
@@ -592,7 +561,7 @@ func main() {
 	httpsMux  = performanceMiddleware(httpsMux)
 
 	// Auth
-	gAuthInfo.ExpiryMap = make(map[string] time.Time)
+	loadAuthCookies()
 
 	ensureTLSCertificate("cert.pem", "key.pem")
 	server := &http.Server{
@@ -616,6 +585,6 @@ func main() {
 	logInfo("SERVER STARTED AT", now.Format(time.RFC3339), fmt.Sprint("(", time.Now().Sub(now),")"))
 	logInfo("http://" + gAppInfo.LocalIP)
 	logInfo("https://" + gAppInfo.LocalIP)
-	logFatal(server.ListenAndServeTLS("cert.pem", "key.pem")) // Certificates are already provided in memory
+	logFatal(server.ListenAndServeTLS(CERT_PEM, KEY_PEM)) // Certificates are already provided in memory
 
 }
