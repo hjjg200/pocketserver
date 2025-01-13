@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <title>Uploads</title>
+        <title>Pocketserver</title>
         <link rel="icon" href="data:image/png;base64,iVBORw0KGgo=">
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -893,14 +893,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (index === null) {
             gAudioCurrentIndex = -1;
-            gAudio.removeAttribute("src");
-            await mediaActionHandlers["pause"]();
             
+            gAudio.removeAttribute("src");
+            const pause = mediaActionHandlers["pause"]();
+
             if ('mediaSession' in navigator)
                 navigator.mediaSession.metadata = null;
             
             musicPlayerArtContainer.querySelectorAll("img").forEach(img => img.removeAttribute("src"));
             updateMusicArtBackground();
+            
+            await pause;
 
             return;
         }
@@ -910,6 +913,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const src   = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: gAlbum});
         const thumb = buildURL(src, {[QUERY_THUMBNAIL]: null});
 
+        musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
+        updateMusicArtBackground();
+
         gAudio.src = src;
     
         await mediaActionHandlers["play"]();
@@ -918,10 +924,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (metadata.title === "") {
             metadata.title = basename;
         }
-        musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
         updateMediaSessionMetadata(metadata.title, metadata.artist, metadata.album, thumb);
         updateMediaSessionPosition();
-        updateMusicArtBackground();
 
         //
         const li0 = musicPlaylist.querySelector(".playing");
