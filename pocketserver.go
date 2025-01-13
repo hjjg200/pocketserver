@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"encoding/base64"
+	"encoding/json"
 	"sync/atomic"
 	"mime"
 	"context"
@@ -261,16 +263,49 @@ func checkNotModified(r *http.Request, mod time.Time) bool {
 
 }
 
+func checkPreservedAlbum(r *http.Request, album string) bool {
+
+	cookie, err := r.Cookie("preservedAlbums")
+
+	if err != nil {
+		return false
+	}
+
+	decodedBytes, err := base64.StdEncoding.DecodeString(cookie.Value)
+	if err != nil {
+		logWarn("Failed to read preserved albums", err)
+		return false
+	}
+
+	var albums = make([]string, 0)
+	err = json.Unmarshal(decodedBytes, &albums)
+	if err != nil {
+		logWarn("Failed to read preserved albums json", err)
+		return false
+	}
+	logDebug("PRESERVED", albums)
+
+	for _, rhs := range albums {
+		if rhs == album {
+			return true
+		}
+	}
+	return false
+
+}
+
 func viewHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Specify the path to your file
 	base	 := filepath.Base(r.URL.Path)
 	query    := r.URL.Query()
+	album	 := query.Get(QUERY_ALBUM)
 	dir 	 := filepath.Join(
 		gAppInfo.UploadDir,
-		filepath.Base(query.Get(QUERY_ALBUM)),
+		filepath.Base(album),
 	)
 	fullpath := filepath.Join(dir, base)
+	preserved := checkPreservedAlbum(r, album)
 
 	if query.Has(QUERY_THUMBNAIL) {
 
@@ -292,7 +327,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/static/default_artwork.jpg", http.StatusSeeOther)
 			return
 		}
-		if checkNotModified(r, info.ModTime()) {
+		if preserved && checkNotModified(r, info.ModTime()) {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
@@ -305,7 +340,9 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		w.Header().Set("Cache-Control", "public, no-cache")
+		if preserved {
+			w.Header().Set("Cache-Control", "public, no-cache")
+		}
 		http.ServeContent(w, r, base, info.ModTime(), bytes.NewReader(thumb))
 
 	} else {
@@ -332,13 +369,15 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Check mod time
-		if checkNotModified(r, info.ModTime()) {
+		if preserved && checkNotModified(r, info.ModTime()) {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
 		
 		// Serve the content
-		w.Header().Set("Cache-Control", "public, no-cache")
+		if preserved {
+			w.Header().Set("Cache-Control", "public, no-cache")
+		}
 		http.ServeContent(w, r, filepath.Base(fullpath), info.ModTime(), file)
 		return
 	

@@ -300,3 +300,23 @@ function throttle(limit, func) {
         }
     };
 }
+
+
+
+function setPlainCookie(name, value, days) {
+    const date = new Date();
+    date.setTime(date.getTime() + days * 24 * 60 * 60 * 1000); // Convert days to milliseconds
+    const expires = `expires=${date.toUTCString()}`;
+    document.cookie = `${name}=${value}; ${expires}; path=/; SameSite=Strict`;
+}
+
+function getCookie(name) {
+    const cookies = document.cookie.split('; ');
+    for (const cookie of cookies) {
+        const [key, value] = cookie.split('=');
+        if (key === name) {
+            return decodeURIComponent(value); // Decode the value if it's URL-encoded
+        }
+    }
+    return null; // Return null if the cookie is not found
+}
