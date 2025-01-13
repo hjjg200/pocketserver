@@ -26,7 +26,7 @@ A simple server built for use on iSH, an emulated linux on iOS.
 ## TODO
 
 - list time, list details time
-- service worker for offline availability; Cache config per album
+- Service Worker API for caching  for offline availability; Cache config per album. Service Worker API requires trusted CA to operate. Need to register root cert to OS's certificates
 - replay icon for retry; status timeout; graceful timeout; needs custom src handling for video, img, audio; default thumbnail and placeholder
 - Create album
 - paste to upload for iOS safari

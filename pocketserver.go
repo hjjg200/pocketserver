@@ -238,19 +238,23 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 
 func checkNotModified(r *http.Request, mod time.Time) bool {
 
+	mod = mod.Truncate(time.Second)
+
 	// Check mod time
 	ifModifiedSince := r.Header.Get("If-Modified-Since")
 	if ifModifiedSince != "" {
+
 		parsedTime, err := http.ParseTime(ifModifiedSince)
 		if err != nil {
 			logDebug("Parse fail", parsedTime, "err:", err)
 			return false
 		}
 
-		logDebug(mod, parsedTime)
-		if mod == parsedTime {
+		logDebug(mod.Sub(parsedTime), "MODTIME", mod, parsedTime)
+		if mod.Equal(parsedTime) {
 			return true
 		}
+
 	}
 
 	return false
@@ -504,7 +508,6 @@ func addDefaultMimeTypes() {
 				break
 			}
 			// Add the extension and MIME type to the map
-			logDebug("MIME ADD", "."+ext, mimeType)
 			mime.AddExtensionType("."+ext, mimeType)
 		}
 	}
@@ -559,6 +562,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", staticHandler)
 	mux.HandleFunc("/static/", staticHandler)
+	mux.HandleFunc("/service-worker.js", staticHandler)
 	mux.HandleFunc("/ping", pingHandler)
 	mux.HandleFunc("/view/", viewHandler)
 	mux.HandleFunc("/upload", uploadHandler)

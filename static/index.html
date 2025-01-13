@@ -462,8 +462,18 @@ document.addEventListener("DOMContentLoaded", () => {
     checkServer();
 });
 
+
+
+async function clearUrlFromCache(urlPattern) {
+  const cache = await caches.open(CACHE_NAME);
+  const keys = await cache.keys();
+  const urlsToDelete = keys.filter(request => request.url.includes(urlPattern));
+  
+  return Promise.all(urlsToDelete.map(request => cache.delete(request)));
+}
+
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/static/service-worker.js')
+    navigator.serviceWorker.register('/service-worker.js')
         .then(registration => {
             console.log('Service Worker registered with scope:', registration.scope);
         })
@@ -471,6 +481,8 @@ if ('serviceWorker' in navigator) {
             console.error('Service Worker registration failed:', error);
         });
 }
+
+
 
 
 

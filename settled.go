@@ -551,9 +551,15 @@ func staticHandler(w http.ResponseWriter, r *http.Request) {
 	if len(p) > 0 {
 		p = p[1:]
 	}
+
+	// Handle special cases
 	if p == "" {
 		p = "static/index.html"
+	} else if p == "service-worker.js" {
+		p = "static/" + p
 	}
+
+	//
 	ext := filepath.Ext(p)
 
 	// Get ETag
@@ -605,7 +611,6 @@ func populateEmbedEtags() {
 
             // Store the ETag (as a string) in the map
 			etag := fmt.Sprintf("\"%x\"", crc32Hash)
-			logDebug("ETag", path, etag)
             gEmbedStaticEtags[path] = etag
         }
     }
