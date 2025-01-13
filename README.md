@@ -32,6 +32,7 @@ A simple server built for use on iSH, an emulated linux on iOS.
 - paste to upload for iOS safari
 - fix when playing stops after uploading
 - playlist shuffle and loop single song
+- ipv6
 
 ### Memo
 

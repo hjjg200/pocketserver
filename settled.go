@@ -74,8 +74,13 @@ func logInfo(items ...interface{}) {
 func logWarn(items ...interface{}) {
 	logTimestamp("["+LOG_RED+"warn"+LOG_RESET+"]", items...)
 }
+func logError(items ...interface{}) {
+	items = append(items, LOG_RESET)
+	logTimestamp(LOG_RED+"["+"ERROR"+"]", items...)
+}
 func logFatal(items ...interface{}) {
-	logTimestamp("["+LOG_RED+"FATAL"+LOG_RESET+"]", items...)
+	items = append(items, LOG_RESET)
+	logTimestamp(LOG_RED+LOG_INVERSE+"["+"FATAL"+"]", items...)
 	os.Exit(1)
 }
 func logDebug(items ...interface{}) {

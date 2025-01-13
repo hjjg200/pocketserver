@@ -121,7 +121,11 @@ func generateSelfSignedCert(root *rootCACertificate, certPath, keyPath, addr str
 	if root == nil {
 
 		template.KeyUsage 		= x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
+		//template.ExtKeyUsage
 		template.IsCA			= true
+
+		template.MaxPathLen		= 1           // Only allow one level of intermediate certs
+		template.MaxPathLenZero	= false   // Enforce the path length constraint
 
 		template.NotAfter		= time.Now().Add(10 * 365 * 24 * time.Hour)
 		template.Subject		= pkix.Name{Organization: []string{"localhost pocketserver ROOT CA"}}
@@ -136,13 +140,17 @@ func generateSelfSignedCert(root *rootCACertificate, certPath, keyPath, addr str
 		template.KeyUsage 		= x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature
 		template.ExtKeyUsage 	= []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 		template.IsCA 			= false
+
+		//template.MaxPathLen
+		//template.MaxPathLenZero
 		
 		template.NotAfter		= time.Now().Add(90 * 24 * time.Hour)
 		template.Subject		= pkix.Name{
 			CommonName:   addr, // Set Common Name to the provided address
 			Organization: []string{"pocketserver"},
 		}
-		
+
+		// Issued certificates only
 		template.DNSNames		= []string{"localhost"} // Add localhost as a valid domain
 		template.IPAddresses	= []net.IP{net.ParseIP("127.0.0.1")} // Add 127.0.0.1 as a valid IP
 
@@ -202,6 +210,7 @@ func loadRootCA(certPath, keyPath string) (*rootCACertificate) {
 		if err != nil {
 			panic(err)
 		}
+		logError("ROOT certificate is newly issued. Remove all of the following: prior root certificate from your device's trusted list, previously used subordinate certificates and keys")
 
 		root, err = _loadRootCA(certPath, keyPath)
 		if err != nil {
@@ -281,44 +290,40 @@ func _ensureTLSCertificate(certPath, keyPath, addr string) error {
 		return fmt.Errorf("failed to parse certificate: %v", err)
 	}
 
-	// Check expiration
-	if time.Now().After(cert.NotAfter) {
-		logInfo("Certificate expired. Regenerating...")
-		return generateSelfSignedCert(root, certPath, keyPath, addr)
-	}
-
-	// Check if the addr is in the certificate's IPAddresses or DNSNames
-	isValid := false
-	ip := net.ParseIP(addr) // Try to parse addr as an IP
-	if ip != nil {
-		// Check IPAddresses field
-		for _, certIP := range cert.IPAddresses {
-			if certIP.Equal(ip) {
-				isValid = true
-				break
-			}
-		}
-	} else {
-		// Check DNSNames field
-		for _, dnsName := range cert.DNSNames {
-			if dnsName == addr {
-				isValid = true
-				break
-			}
-		}
-	}
-	if !isValid {
-		logInfo("Certificate doesn't have local address included. Regenerating...")
-		return generateSelfSignedCert(root, certPath, keyPath, addr)
-	}
-
-	// Optionally check if the certificate is close to expiration
-	if time.Until(cert.NotAfter) < 7*24*time.Hour {
-		logInfo("Certificate is close to expiration. Regenerating...")
+	if err = validateCertificate(cert, addr); err != nil {
+		logWarn("Certificate error", err,"Regenerating...")
 		return generateSelfSignedCert(root, certPath, keyPath, addr)
 	}
 
 	return nil
+}
+
+// Add a helper function to check certificate validity
+func validateCertificate(cert *x509.Certificate, addr string) error {
+    if time.Now().After(cert.NotAfter) {
+        return fmt.Errorf("expired")
+    }
+
+    if time.Until(cert.NotAfter) < 7*24*time.Hour {
+        return fmt.Errorf("expiring soon")
+    }
+    
+    ip := net.ParseIP(addr)
+    if ip != nil {
+        for _, certIP := range cert.IPAddresses {
+            if certIP.Equal(ip) {
+                return nil
+            }
+        }
+        return fmt.Errorf("IP %v not found in certificate", ip)
+    }
+    
+    for _, dnsName := range cert.DNSNames {
+        if dnsName == addr {
+            return nil
+        }
+    }
+    return fmt.Errorf("hostname %s not found in certificate", addr)
 }
 
 func throttleAtomic(fn func(), delay time.Duration) func() {
