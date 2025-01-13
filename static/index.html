@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Uploads</title>
+        <link rel="icon" href="data:image/png;base64,iVBORw0KGgo=">
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <link rel="stylesheet" href="/static/settled.css">
+        <style>
+:root {
+    --pad-lr-media: 1.6rem;
+    --cl-success-area: #5c7;
+    --cl-error-area: #ff5b45;
+}
+
+.album-title-container {
+    padding: 0 1.5rem 1rem 1.5rem;
+    display: none;
+}
+.is-album .album-title-container {
+    display: block;
+}
+.album-title-container > * {
+    line-height: 100%;
+}
+.album-title-container .back-to-home {
+    color: #888;
+    padding: .5rem 0;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    width: fit-content;
+}
+.album-title-container .back-to-home img {
+    height: 0.9rem;
+    display: block;
+    margin-right: .15rem;
+}
+.album-title {
+    font-size: 2.25rem;
+}
+.albums-list {
+    padding: .75rem 1.25rem;
+    display: grid;
+    gap: .5rem;
+    grid-template-columns: repeat(3, 1fr);
+    user-select: none;
+}
+@media (max-width: 60rem) {
+    .albums-list {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+@media (max-width: 45rem) {
+    .albums-list {
+        grid-template-columns: repeat(1, 1fr);
+    }
+}
+.albums-list > div {
+    border-radius: .8rem;
+    padding: .75rem 1rem;
+    display: flex;
+}
+.album-container {
+    border: 1px solid #fafafa;
+    background: #fafafa;
+}
+.album-thumbnail {
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-right: .75rem;
+    background: #eaeaea;
+    overflow: hidden;
+    border-radius: .25rem;
+}
+.album-thumbnail img {
+    display: block;
+    width: auto;
+    height: 100%;
+}
+.album-info {
+    height: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: stretch;
+}
+.album-info .sub {
+    line-height: 1rem;
+    font-size: 0.9rem;
+    color: #666;
+}
+.album-create img {
+    width: 1.1rem;
+}
+.album-create div {
+    line-height: 0;
+    padding-left: .25rem;
+}
+.albums-list .album-create {
+    align-items: center;
+    justify-content: center;
+    color: #999;
+    font-size: 0.9rem;
+    text-align: center;
+    background: none;
+    position: relative;
+}
+.albums-list.empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.albums-list.empty .album-create {
+    border-radius: 1rem;
+    height: 2rem;
+    width: 15rem;
+    margin: 0 auto;
+    display: flex;
+    border: 1px dashed #ddd;
+}
+.albums-list:not(.empty) .album-create:before {
+  content: "";
+  position: absolute;
+  border-radius: inherit;
+  border: 1px dashed #ddd;
+  inset: 1px;
+}
+.is-album .albums-list {
+    display: none;
+}
+
+
+
+
+.music-player-container {
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    padding: .5rem 0 .75rem 0;
+    position: relative;
+    user-select: none;
+}
+@media (max-width: 40rem) {
+    .music-player-container {
+        flex-direction: column;
+        align-items: center;
+    }
+}
+.music-player-container.no-songs {
+    display: none;
+}
+.music-player {
+    position: relative;
+    max-width: 15rem;
+    width: 100%;
+}
+.music-player .album-art-container {
+    width: 100%;
+    background: #eee;
+    aspect-ratio: 1/1;
+    display: flex;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+}
+.music-player .album-art-container > * {
+    width: 100%;
+    position: relative;
+}
+.music-player .album-art-container .cover-bg,
+.music-player .album-art-container .cover {
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+.music-player .album-art-container .cover {
+    filter: blur(2.5rem);
+}
+.music-player .buttons {
+    height: 2.75rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: .75rem;
+}
+.music-player .buttons .button {
+    width: 2.2rem;
+    height: 2.2rem;
+    margin: 0 .15rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+}
+.music-player .buttons img {
+    pointer-events: none;
+}
+.music-player.playing .play {
+    display: none;
+}
+.music-player:not(.playing) .pause {
+    display: none;
+}
+.music-player .play-pause img {
+    height: 120%;
+    aspect-ratio: 1/1;
+}
+.music-player .prev img,
+.music-player .next img {
+    height: 85%;
+    aspect-ratio: 1/1;
+    transform: scaleX(1.2);
+}
+.music-player .seeker {
+    height: 1.3rem;
+    margin: 0 .9rem;
+    display: flex;
+    align-items: center;
+}
+.music-player .seeker .slider-inner {
+    transition: transform 0.3s ease;
+    background: #eee;
+    height: .15rem;
+    width: 100%;
+}
+.music-player .seeker:hover .slider-inner {
+    transform: scaleY(2); /* Scale vertically on hover */
+}
+.music-player .seeker .slider-fill {
+    background: #555;
+}
+.music-player .sub-buttons {
+    height: 1.25rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 1rem;
+    margin-top: .1rem;
+    margin-bottom: 1rem;
+}
+.music-player .sub-buttons .button {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+.music-player .sub-buttons .button img {
+    height: 100%;
+    aspect-ratio: 1/1;
+}
+.music-player .volume-container {
+    display: flex;
+    align-items: center;
+}
+.music-player .volume-container .slider {
+    height: .25rem;
+    width: 4rem;
+    margin-left: .5rem;
+    background: #eee;
+    position: relative;
+    border-radius: .125rem;
+    overflow: hidden;
+}
+.music-player .volume-container .slider-fill {
+    background: #777;
+}
+.music-playlist {
+    flex: 1;
+    overflow-y: scroll;
+    list-style: none;
+    max-height: 24rem;
+}
+.music-playlist li {
+    padding: .6rem 1rem;
+    border-bottom: 1px dashed #ddd;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    line-height: 1.25;
+}
+.music-playlist .left {
+    padding-right: 1rem;
+    display: flex;
+}
+.music-playlist li .before {
+    width: 1.5rem;
+    background: url(/static/play.svg);
+    background-repeat: no-repeat;
+    background-position-y: center;
+    background-position-x: -.8rem;
+    background-size: 2rem;
+}
+.music-playlist li:not(.playing) .before {
+    display: none;
+}
+.music-playlist .artist {
+    color: #aaa;
+    font-size: 0.9rem;
+}
+.music-playlist .right {
+    color: #999;
+}
+
+        </style>
+    </head>
+    <body>
+        <div class="main-container">
+
+
+            <div class="drag-indicator" style="display: none;">
+                Drop files to upload...
+            </div>
+
+            <div class="server-info-container">
+                <span class="memstats">-</span>
+                <div class="status">
+                    <div class="status-light"></div>
+                    <div class="status-text"></div>
+                </div>
+            </div>
+
+            <div class="upload-form-wrap">
+                <div class="upload-button-wrap">
+                    <label>
+                        Upload
+                        <input type="file" id="upload-input" name="filename" multiple>
+                    </label>
+                </div>
+            </div>
+
+            <div class="upload-info-container" style="display: none;">
+                <div class="file-no">1 of 1</div>
+                <div class="file-name">asdasd.jpg</div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar"></div>
+                </div>
+                <div class="progress-info">
+                    <span class="speed">12.34 MB/s</span>
+                    <span class="time">00:04</span>
+                </div>
+            </div>
+
+            <div class="album-title-container">
+
+                <div class="back-to-home">
+                    <img src="/static/back.svg" alt="">
+                    <div>Back to home</div>
+                </div>
+                <div class="album-title">-</div>
+                
+            </div>
+
+            <div class="albums-list">
+                <!--<div class="album-container">
+                    <div class="album-thumbnail">
+
+                    </div>
+                    <div class="album-info">
+                        <div class="name">
+                            Album 1
+                        </div>
+                        <div class="sub">
+                            30 music
+                        </div>
+                    </div>
+                </div>
+
+                <div class="album-container">
+                    <div class="album-thumbnail">
+
+                    </div>
+                    <div class="album-info">
+                        <div class="name">
+                            Album 2
+                        </div>
+                        <div class="sub">
+                            30 music
+                        </div>
+                    </div>
+                </div>-->
+
+                <div class="album-create">
+                    <img src="/static/plus.svg?f=%23aaa" alt="">
+                    <div>Create Album</div>
+                </div>
+            </div>
+
+            <div class="music-player-container no-songs">
+                <div class="music-player">
+                    <div class="album-art-container">
+                        <canvas class="cover-bg"></canvas>
+                        <img class="cover"></img>
+                        <img class="album-art"></img>
+                    </div>
+                    <div class="buttons">
+                        <audio style="display: none;">
+                        </audio>
+                        <div class="prev button"><img src="/static/prevtrack.svg" alt=""></div>
+                        <div class="play-pause">
+                            <div class="play button"><img src="/static/play.svg" alt=""></div>
+                            <div class="pause button"><img src="/static/pause.svg" alt=""></div>
+                        </div>
+                        <div class="next button"><img src="/static/nexttrack.svg" alt=""></div>
+                    
+                    </div>
+                        <div class="seeker">
+                            <div class="slider-inner">
+                                <div class="slider-fill"></div>
+                            </div>
+                        </div>
+                        <div class="sub-buttons">
+                        
+                            <div class="volume-container">
+                                <div class="button"><img src="/static/volume.svg" alt=""></div>
+                                <div class="slider" style="display: none;">
+                                    <div class="slider-fill"></div>
+                                </div>
+                            </div>
+                            <div class="open-list button"><img src="/static/shuffle.svg" alt=""></div>
+                        </div>
+                </div>
+                <ul class="music-playlist">
+                    <!--<li>
+                        <div class="left">
+                            <div class="title">Odoriko</div>
+                            <div class="artist">Vaundy</div>    
+                        </div>
+                        <div class="right">
+                            03:50
+                        </div>
+                    </li>-->
+                </ul>
+                    
+            </div>
+
+            <div class="total-size-info">-</div>
+
+            <div class="others-container">
+
+            </div>
+            <div class="media-container">
+                
+            </div>
+        </div>
+    </body>
+    <script src="/static/crc32.js"></script>
+    <script src="/static/utility.js"></script>
+    <script>
+
+const DEFAULT_ARTWORK = "/static/default_artwork.jpg";
+
+const QUERY_ALBUM = "album";
+const QUERY_THUMBNAIL = "thumbnail";
+const QUERY_DETAILS = "details";
+const URL_VIEW = "/view";
+const URL_LIST = "/list";
+
+const TYPES_MEDIA = ["image", "video", "audio"];
+
+document.addEventListener("DOMContentLoaded", () => {
+    checkServer();
+});
+
+
+
+
+
+(() => { // LIST
+        
+    // Album
+    window.gAlbum = null;
+    
+    document.addEventListener("DOMContentLoaded", () => {
+        changeAlbum(getQueryParam(QUERY_ALBUM));
+    });
+
+    const albumTitleContainer = document.querySelector(".album-title-container");
+    const backToHome = albumTitleContainer.querySelector(".back-to-home");
+    const albumTitle = albumTitleContainer.querySelector(".album-title");
+    const albumsList = document.querySelector(".albums-list");
+    const albumCreate = albumsList.querySelector(".album-create");
+
+    let formatSrc;
+
+    function changeAlbum(album) {
+
+        if((album || "") === "") {
+            removeQueryParam(QUERY_ALBUM, true);
+            album = null;
+            document.body.classList.remove("is-album");
+        } else {
+            addQueryParam(QUERY_ALBUM, album, true);
+            document.body.classList.add("is-album");
+            albumTitle.textContent = album;
+        }
+
+        gAlbum = album;
+        populate_list();
+
+    }
+
+    backToHome.addEventListener("click", () => {
+        changeAlbum(null);
+    });
+    window.addEventListener('popstate', (event) => {
+        changeAlbum(getQueryParam(QUERY_ALBUM));
+    });
+
+    function addAlbum(album) {
+        
+        if(albumsList.classList.contains("empty"))
+            albumsList.classList.remove("empty");
+
+        const container = createElement("div", "album-container");
+        const thumbnail = createElement("div", "album-thumbnail");
+        const img  = createElement("img");
+        const info = createElement("div", "album-info");
+        const name = createElement("div", "name");
+        const sub = createElement("div", "sub");
+
+        name.textContent = album;
+        sub.textContent = "-";
+
+        thumbnail.appendChild(img);
+
+        info.appendChild(name);
+        info.appendChild(sub);
+
+        container.appendChild(thumbnail);
+        container.appendChild(info);
+
+        albumsList.insertBefore(container, albumsList.firstChild);
+
+        container.addEventListener("click", () => {
+            changeAlbum(album);
+        });
+
+        (async () => {
+            const url = buildURL(URL_LIST, {[QUERY_ALBUM]: album});
+            const response = await fetch(url);
+            const metaMap = await response.json();
+
+            sub.textContent = formatAlbumInfo(metaMap);
+
+            const basename = Object.keys(metaMap)
+                .sort((a, b) => {
+                    return new Date(metaMap[b].modTime) - new Date(metaMap[a].modTime);
+                })
+                .find((k) => TYPES_MEDIA.includes(metaMap[k].mimeCategory));
+
+            if (basename === undefined)
+                return;
+
+            const meta = metaMap[basename];
+            const cat = meta.mimeCategory;
+            const src = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: album});
+
+            if (cat === "audio") {
+                img.src = buildURL(
+                    src, {[QUERY_THUMBNAIL]: "small"}
+                );
+            } else if (cat === "video") {
+                img.src = buildURL(
+                    src, {[QUERY_THUMBNAIL]: null}
+                );
+            } else {
+                img.src = src;
+            }
+        })();
+    
+    }
+    function createVideo(basename) {
+
+        const thumbnail = createElement("img", "thumbnail");
+        const src = buildURL(
+            [URL_VIEW, basename],
+            {[QUERY_ALBUM]: gAlbum}
+        );
+        
+        thumbnail.src = DEFAULT_ARTWORK;
+        observeWithCallback(thumbnail, () => {
+            thumbnail.src = buildURL(
+                src, 
+                {[QUERY_THUMBNAIL]: null, [QUERY_ALBUM]: gAlbum}
+            );
+        });
+
+        thumbnail.addEventListener("click", () => {
+            const video = createElement("video", "media-body");
+            video.setAttribute("src", src); //+ "#t=0.001"); // #t=0.001 for safari thumbnail load hack
+            video.setAttribute("controls", "");
+            video.play();
+            
+            thumbnail.parentNode.insertBefore(video, thumbnail);
+        });
+
+        return thumbnail;
+
+    }
+    function createImage(basename) {
+
+        const image = createElement("img", "media-body");
+        image.setAttribute("src", DEFAULT_ARTWORK);
+        
+        observeWithCallback(image, () => {
+            image.setAttribute("src", buildURL(
+                [URL_VIEW, basename],
+                {[QUERY_ALBUM]: gAlbum}
+            ));
+        });
+
+        return image;
+        
+    }
+    function createAudio(basename) {
+        
+        const src = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: gAlbum});
+
+        const index = gAudioNames.length;
+        gAudioNames.push(basename);
+        // TODO gPlaylist.push(basename);
+
+        const container = createElement("div", "music-container");
+        const artContainer = createElement("div", "music-art-container");
+        const art = createElement("img", "music-art");
+
+        art.src = DEFAULT_ARTWORK;
+        observeWithCallback(art, async () => {
+            art.src = buildURL(src, {[QUERY_THUMBNAIL]: "small", [QUERY_ALBUM]: gAlbum});
+        });
+
+        artContainer.appendChild(art);
+
+        const info = createElement("div", "music-info");
+        const title = createElement("div", "title");
+        const artist = createElement("div", "artist");
+
+        info.appendChild(title);
+        info.appendChild(artist);
+        container.appendChild(artContainer);
+        container.appendChild(info);
+
+        // Playlist
+        const li = createElement("li");
+        const left = createElement("div", "left");
+        const leftBefore = createElement("div", "before");
+        const leftInfo = createElement("div", "info");
+        const listTitle = createElement("div", "title");
+        const listArtist = createElement("div", "artist");
+        const right = createElement("div", "right");
+
+        listTitle.textContent = basename;
+        listArtist.textContent = '-';
+
+        leftInfo.appendChild(listTitle);
+        leftInfo.appendChild(listArtist);
+        left.appendChild(leftBefore);
+        left.appendChild(leftInfo);
+
+        container.populateDetails = () => {
+            const details = gMetadataMap[basename].details;
+
+            details.title = details.title || basename;
+            details.artist = details.artist || "-";
+
+            listTitle.textContent = details.title;
+            listArtist.textContent = details.artist;
+            title.textContent = details.title;
+            artist.textContent = details.artist;
+            right.textContent = formatDuration(details.duration);
+        };
+
+        li.appendChild(left);
+        li.appendChild(right);
+
+        musicPlaylist.appendChild(li);
+
+        // Event listener
+        artContainer.addEventListener("click", changeMusic.bind(null, index));
+        li.addEventListener("click", changeMusic.bind(null, index));
+
+        return container;
+
+    }
+    
+    function formatAlbumInfo(metaMap) {
+        
+        const totalSize = Object.values(metaMap).reduce((acc, v) => acc + v.size, 0);
+        const files     = Object.values(metaMap).filter(v => !v.isDir);
+        const numMedia  = files.filter(v => TYPES_MEDIA.includes(v.mimeCategory)).length;
+        const numOthers = files.length - numMedia;
+
+        let totalInfo = formatBytes(totalSize) + " - ";
+        if (numOthers > 0) {
+            totalInfo += numOthers + " files, ";
+        }
+        totalInfo += numMedia + " media";
+        
+        return totalInfo;
+
+    }
+
+
+    window.gMetadataMap = {};
+
+    const others = document.querySelector(".others-container");
+    const media = document.querySelector(".media-container");
+
+    function cleanup_list() {
+        others.innerHTML = "";
+        media.innerHTML = "";
+
+        cleanupAudio(); // TODO make cleanup process not confusing
+
+        albumsList.querySelectorAll(".album-container").forEach(el => el.remove());
+        albumsList.classList.add("empty");
+    }
+
+    window.populate_list = async function () {
+
+        const url = buildURL(URL_LIST, {[QUERY_ALBUM]: gAlbum});
+        const detailsUrl = buildURL(url, {[QUERY_DETAILS]: null});
+        const bodiesQueue = [];
+
+        let response = await fetch(url);
+        let detailsPromise = fetch(detailsUrl);
+        let metaMap = await response.json();
+
+        window.gMetadataMap = metaMap;
+        cleanup_list();
+
+        const sortedKeys = Object.keys(metaMap).sort((a, b) => {
+            return new Date(metaMap[b].modTime) - new Date(metaMap[a].modTime);
+        });
+        
+        for (const key of sortedKeys) {
+
+            const basename = key;
+            const meta = metaMap[basename];
+            const typ = meta.mimeCategory; // MIME type's type part
+            const src = buildURL(
+                [URL_VIEW, basename],
+                {[QUERY_ALBUM]: gAlbum});
+
+            if(TYPES_MEDIA.includes(typ)) {
+
+                const wrap = createElement("div", "media-wrap");
+                const header = createElement("h4", "media-header");
+                const h_a = createElement("a");
+                h_a.innerHTML = basename;
+                h_a.setAttribute("href", src);
+                header.appendChild(h_a);
+                wrap.appendChild(header);
+
+                const body_wrap = createElement("div", "media-body-wrap");
+                let body;
+
+                if(typ === "video") {
+                    body = createVideo(basename);
+                } else if(typ === "image") {
+                    body = createImage(basename);
+                } else {
+                    body = createAudio(basename);
+                }
+
+                bodiesQueue.push(body);
+                body_wrap.appendChild(body);
+
+                wrap.appendChild(body_wrap);
+                media.appendChild(wrap);
+
+            } else if (meta.isDir) {
+
+                if (gAlbum === null)
+                    addAlbum(basename);
+
+            } else {
+
+                let wrap = createElement("div", "file-wrap");
+                let anchor = createElement("a", "file-anchor");
+                anchor.innerHTML = basename;
+                anchor.setAttribute("href", src);
+                wrap.appendChild(anchor);
+                others.appendChild(wrap);
+
+            }
+        }
+
+        // TODO remove folder count from others
+        const numAudio = Object.values(metaMap).filter(v => v.mimeCategory === "audio").length;
+        
+        totalSizeInfo.textContent = formatAlbumInfo(metaMap);
+
+        // Adjust music player
+        musicPlayerContainer.classList[(numAudio > 0) ? "remove":"add"]("no-songs");
+
+        // DETAILS
+        response = await detailsPromise;
+        window.gMetadataMap = await response.json();
+
+        for(const body of bodiesQueue) {
+            if (!body) continue;
+            if (!document.body.contains(body)) continue;
+            if (body.populateDetails) {
+                body.populateDetails();
+            }
+        }
+        
+
+    }
+})();
+
+
+(() => {// Audio
+    window.gAudioNames = [];
+    window.gAudioCurrentIndex = -1;
+    let gAudioShuffle = false;
+    let gAudioLoop = true;
+
+    window.addEventListener("DOMContentLoaded", () => {
+        cleanupAudio();
+    });
+    window.cleanupAudio = function() {
+        gAudioNames = [];
+        musicPlaylist.innerHTML = "";
+        changeMusic(null);
+    }
+
+    window.musicPlaylist = document.querySelector(".music-playlist");
+    window.musicPlayerContainer = document.querySelector(".music-player-container");
+    const musicPlayer = document.querySelector(".music-player");
+    const musicPlayerArtContainer = musicPlayer.querySelector(".album-art-container");
+    const musicPlayerSeeker = musicPlayer.querySelector(".seeker");
+    const musicPlayerVolumeContainer = musicPlayer.querySelector(".volume-container");
+    const musicPlayerVolumeButton = musicPlayerVolumeContainer.querySelector(".button");
+    const musicPlayerVolumeSlider = musicPlayerVolumeContainer.querySelector(".slider");
+
+    const gAudio = document.querySelector(".music-player audio");
+    
+    musicPlayerArtContainer.addEventListener("click", () => {
+        ensureLiVisibility(musicPlaylist, musicPlaylist.querySelector("li.playing"));
+    });
+    musicPlayerVolumeButton.addEventListener("click", () => {
+        musicPlayerVolumeSlider.style.display = "";
+    });
+    document.addEventListener('click', (event) => {
+        if (!musicPlayerVolumeContainer.contains(event.target)) {
+            musicPlayerVolumeSlider.style.display = "none";
+        }
+    });
+    const mediaActionHandlers = {
+        play: async () => {
+            if (gAudioCurrentIndex == -1) {
+                await changeMusic(0);
+            }
+            await gAudio.play();
+            musicPlayer.classList.add("playing");
+
+            navigator.mediaSession.playbackState = "playing";
+        },
+        pause: () => {
+            gAudio.pause();
+            musicPlayer.classList.remove("playing");
+
+            navigator.mediaSession.playbackState = "paused";
+        },
+        seekbackward: null,
+        seekforward: null,
+        seekto: (details) => {
+            if (details.seekTime) {
+                gAudio.currentTime = details.seekTime;
+            }
+            updateMediaSessionPosition();
+        },
+        nexttrack: async () => {
+            const nextIndex = (gAudioCurrentIndex + 1) % gAudioNames.length;
+            gAudioCurrentIndex = nextIndex;
+            await changeMusic(nextIndex);
+        },
+        previoustrack: async () => {
+            if (gAudio.currentTime > 3.0) {
+                gAudio.currentTime = 0;
+                await mediaActionHandlers['play']();
+            } else {
+                const prevIndex = (gAudioCurrentIndex - 1 + gAudioNames.length) % gAudioNames.length;
+                gAudioCurrentIndex = prevIndex;
+                await changeMusic(prevIndex);
+            }
+        },
+    };
+    window.changeMusic = async function (index) {
+
+        if (index === null) {
+            gAudioCurrentIndex = -1;
+            gAudio.removeAttribute("src");
+            await mediaActionHandlers["pause"]();
+            
+            if ('mediaSession' in navigator)
+                navigator.mediaSession.metadata = null;
+            
+            musicPlayerArtContainer.querySelectorAll("img").forEach(img => img.removeAttribute("src"));
+            updateMusicArtBackground();
+
+            return;
+        }
+
+        gAudioCurrentIndex = index;
+        const basename = gAudioNames[index];
+        const src   = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: gAlbum});
+        const thumb = buildURL(src, {[QUERY_THUMBNAIL]: null});
+
+        gAudio.src = src;
+    
+        await mediaActionHandlers["play"]();
+        
+        let metadata = gMetadataMap[basename];
+        if (metadata.title === "") {
+            metadata.title = basename;
+        }
+        musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
+        updateMediaSessionMetadata(metadata.title, metadata.artist, metadata.album, thumb);
+        updateMediaSessionPosition();
+        updateMusicArtBackground();
+
+        //
+        const li0 = musicPlaylist.querySelector(".playing");
+        if (li0) li0.classList.remove("playing");
+
+        const li1 = musicPlaylist.querySelectorAll("li")[index];
+        li1.classList.add("playing");
+        ensureLiVisibility(musicPlaylist, li1);
+
+    }
+
+    gAudio.addEventListener("ended", mediaActionHandlers["nexttrack"]);
+    gAudio.addEventListener('playing', setupMediaSessionControls);
+
+    createSlider(musicPlayerVolumeSlider, 0.5, true, volume => {
+        gAudio.volume = volume;
+    }, (updater) => {
+        gAudio.addEventListener("volumechange", () => {
+            updater(gAudio.volume);
+        });
+    });
+    createSlider(musicPlayerSeeker, 0.0, false, frac => {
+        if(!gAudio.duration) {
+            return;
+        }
+        gAudio.currentTime = gAudio.duration * frac;
+    }, (updater) => {
+        gAudio.addEventListener("timeupdate", () => {
+            updater(gAudio.currentTime / gAudio.duration);
+        });
+    });
+
+    const gAudioPrevButton = document.querySelector(".music-player .prev");
+    const gAudioNextButton = document.querySelector(".music-player .next");
+    const gAudioPlayPauseButton = document.querySelector(".music-player .play-pause");
+    gAudioPrevButton.addEventListener("click", mediaActionHandlers["previoustrack"]);
+    gAudioNextButton.addEventListener("click", mediaActionHandlers["nexttrack"]);
+    gAudioPlayPauseButton.addEventListener("click", async () => {
+        if(gAudio.paused) {
+            await mediaActionHandlers["play"]();
+        } else {
+            mediaActionHandlers["pause"]();
+        }
+    });
+
+    function updateMediaSessionPosition() {
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.setPositionState({
+                duration: gAudio.duration || 0,
+                playbackRate: gAudio.playbackRate,
+                position: gAudio.currentTime
+            });
+        }
+    }
+    function updateMusicArtBackground() {
+
+        // Fill the background of blurred album art so that it looks more natural than just gray
+        
+        const img = musicPlayerArtContainer.querySelector('.cover');
+        const canvas = musicPlayerArtContainer.querySelector('.cover-bg');
+
+        if (img.src === "") {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            return;
+        }
+
+        img.onload = () => {
+            // Match canvas size to the blurred image
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+
+            // Get canvas context
+            const ctx = canvas.getContext('2d');
+
+            // Draw blurred image onto canvas to calculate the average color
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            // Get pixel data
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const pixels = imageData.data;
+
+            let totalR = 0, totalG = 0, totalB = 0;
+            const totalPixels = pixels.length / 4;
+
+            // Calculate average color
+            for (let i = 0; i < pixels.length; i += 4) {
+                totalR += pixels[i];     // Red
+                totalG += pixels[i + 1]; // Green
+                totalB += pixels[i + 2]; // Blue
+            }
+
+            const avgR = Math.round(totalR / totalPixels);
+            const avgG = Math.round(totalG / totalPixels);
+            const avgB = Math.round(totalB / totalPixels);
+
+            // Fill canvas with the average color
+            ctx.fillStyle = `rgb(${avgR}, ${avgG}, ${avgB})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        };
+
+    }
+    function updateMediaSessionMetadata(title, artist, album, artworkUrl) {
+        if ('mediaSession' in navigator) {
+
+            // Prevent video from interrupting media session metadata
+            document.querySelectorAll('video').forEach(element => element.remove());
+
+            let artwork = [
+                {src: artworkUrl, sizes: "96x96", type: "image/jpg",},
+                {src: artworkUrl, sizes: "128x128", type: "image/jpg",},
+                {src: artworkUrl, sizes: "192x192", type: "image/jpg",},
+                {src: artworkUrl, sizes: "256x256", type: "image/jpg",},
+                {src: artworkUrl, sizes: "384x384", type: "image/jpg",},
+                {src: artworkUrl, sizes: "512x512", type: "image/jpg",},
+            ];
+
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: title,
+                artist: artist,
+                album: album,
+                artwork: artwork,
+            });
+        }
+    }
+
+    // MediaSession API handlers
+    async function setupMediaSessionControls() {
+        if ('mediaSession' in navigator) {
+            for (const [action, handler] of Object.entries(mediaActionHandlers)) {
+                navigator.mediaSession.setActionHandler(action, handler);
+            }
+        }
+    }
+})();
+
+
+(() => { // UPLOAD
+    const upload_input = document.getElementById("upload-input");
+    const uploadInfoContainer = document.querySelector(".upload-info-container");
+    const uploadInfoFilename = document.querySelector(".upload-info-container .file-name");
+    const uploadInfoFileno = document.querySelector(".upload-info-container .file-no");
+    const uploadInfoProgress = document.querySelector(".upload-info-container .progress-bar");
+    const uploadInfoSpeed = document.querySelector(".upload-info-container .speed");
+    const uploadInfoTime = document.querySelector(".upload-info-container .time");
+    window.upload_processed = false;
+
+    function setUploadProgress(percent) {
+        uploadInfoProgress.style.width = percent + "%";
+    }
+
+    upload_input.addEventListener("change", function() {
+        if(upload_processed) return;
+        if(this.files.length == 0) return;
+
+        uploadFiles([...this.files]);
+    }, false);
+
+    window.uploadFiles = async function (files) {
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        upload_processed = true;
+        uploadInfoContainer.classList.remove("error");
+        uploadInfoContainer.style.display = '';
+
+        const start = Date.now();
+        let totalSize = 0;
+        let totalUploaded = 0;
+        for (const file of files) {
+            totalSize += file.size;
+        }
+
+        try {
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                uploadInfoFilename.textContent = file.name;
+                uploadInfoFileno.textContent = (i+1) + " of " + files.length;
+                setUploadProgress(0);
+
+                const arrayBuffer = await file.arrayBuffer(); // Read the file as an ArrayBuffer
+                const hashHex = CRC32.buf(new Uint8Array(arrayBuffer)) >>> 0;
+
+                    await uploadSingleFile(file, hashHex, (delta) => {
+
+                        totalUploaded += delta;
+
+                        if(totalUploaded > 0) {
+
+                            const elapsed = (Date.now() - start) / 1000;
+                            const speed = totalUploaded / elapsed;
+                            uploadInfoSpeed.textContent = formatBytes(speed) + "/s";
+
+                            const left = Math.max(1, Math.floor((elapsed/totalUploaded) * (totalSize - totalUploaded)));
+
+                            const mins = Math.floor(left / 60);
+                            const secs = left % 60;
+                            uploadInfoTime.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+                        } else {
+                            uploadInfoSpeed.textContent = "0 B/s";
+                            uploadInfoTime.textContent = "-";
+                        }
+
+                    });
+            
+            }
+
+            //uploadInfoContainer.style.display = 'none';
+            uploadInfoSpeed.textContent = formatBytes(totalUploaded) + " uploaded";
+            uploadInfoTime.textContent = "-";
+
+        } catch(error) {
+
+            checkServer();
+            uploadInfoContainer.classList.add("error");
+            uploadInfoSpeed.textContent = error.message;
+            return;
+
+        }
+
+        upload_processed = false;
+        populate_list();
+
+    }
+
+    function uploadSingleFile(file, hashHex, ondelta) {
+
+        return new Promise((resolve, reject) => {
+            // Create FormData
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('hashHex', hashHex);
+
+            // Fake endpoint - replace with your actual server upload URL
+            const uploadUrl = buildURL("/upload", {[QUERY_ALBUM]: gAlbum});
+
+            // Setup XHR
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', uploadUrl, true);
+
+            // Track upload progress
+            let lastLoaded = 0;
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percent = Math.floor((event.loaded / event.total) * 100);
+                    setUploadProgress(percent);
+
+                    // Send delta back
+                    ondelta(event.loaded - lastLoaded);
+                    lastLoaded = event.loaded;
+                }
+            };
+
+            // On load (finished)
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    // File uploaded successfully
+                    resolve();
+                } else {
+                    // Handle error
+                    reject(new Error(xhr.status + ": " + xhr.response));
+                }
+                checkMemstats();
+            };
+
+            // On error
+            xhr.onerror = () => {
+                reject(new Error('Network error'));
+            };
+
+            // Send the file
+            xhr.send(formData);
+        });
+    }
+})();
+
+
+(() => { // DRAG HANDLING
+        
+    // Helper states
+    const dragIndicator = document.querySelector(".drag-indicator");
+    let dragCounter = 0; // track how many "dragenter" events
+    let dragStartedInternal = false; // to feign knowing it came from inside
+                                    // simply leaving and reentering would make it seem from outside
+
+    function isDragFromOutside(event) {
+        
+        for (const item of event.dataTransfer.items) {
+            if (item.type === "text/uri-list") {
+                const url = event.dataTransfer.getData(item.type);
+                try {
+                    // Parse the URL to extract its origin
+                    const parsedUrl = new URL(url);
+                    if (parsedUrl.origin === window.location.origin)
+                        return false;
+                } catch (error) {
+                    console.log(`Invalid URL: ${url}`);
+                }
+            }
+        }
+
+        return true;
+
+    }
+
+    function handleDragStart(event) {
+        dragStartedInternal = true;
+    }
+
+    function handleDragEnter(event) {
+        if(upload_processed) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        dragCounter++;
+
+        if (dragStartedInternal) return;
+
+        /* dragstart and drop has access to drop info
+        if (isDragFromOutside(event) === false)
+            return;
+        */
+
+        dragIndicator.style.display = '';
+    }
+
+    function handleDragOver(event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    function handleDragLeave(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        dragCounter--;
+
+        // If we are not in a nested drag area, hide the overlay
+        if (dragCounter === 0) {
+            dragIndicator.style.display = 'none';
+            dragStartedInternal = false;
+        }
+    }
+
+    function handleDrop(event) {
+        if(upload_processed) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        dragCounter = 0;
+        dragStartedInternal = false;
+
+        // Hide the overlay
+        dragIndicator.style.display = 'none';
+
+        const files = event.dataTransfer.files;
+        if (files.length === 0) return;
+
+        if (isDragFromOutside(event) === false)
+            return;
+
+        // Upload each file in series or parallel (example: in series for clarity)
+        uploadFiles([...files]);
+    }
+
+    // Set up document-level event listeners for drag and drop
+    document.addEventListener('dragstart', handleDragStart);
+    document.addEventListener('dragenter', handleDragEnter);
+    document.addEventListener('dragover', handleDragOver);
+    document.addEventListener('dragleave', handleDragLeave);
+    document.addEventListener('drop', handleDrop);
+
+})();
+
+(() => { // SERVER STATUS
+    const serverInfoContainer = document.querySelector(".server-info-container");
+    const memstats = serverInfoContainer.querySelector(".memstats");
+    const checkServerInterval = 5 * 60 * 1000;
+    let checkServerHandle;
+    window.checkServer = debounce(2000.0, async function () {
+
+        fetch('/ping') // prevent recursive
+            .catch(err => {
+                serverInfoContainer.classList.add("error");
+                console.error('Error during checking memstats:', err);
+                clearInterval(checkServerHandle);
+            });
+
+    });
+    checkServerHandle = setInterval(checkServer, checkServerInterval);
+
+    //
+    window.totalSizeInfo = document.querySelector(".total-size-info");
+
+    function processPerformanceHeader(performanceHeader) {
+
+        if (!performanceHeader) return;
+
+        try {
+            // Parse the performance JSON
+            const performanceData = JSON.parse(performanceHeader);
+            
+            memstats.textContent = `
+                CR: ${performanceData.concurrentRequests}/${performanceData.peakConcurrentRequests}, 
+                MA: ${formatBytes(performanceData.memAlloc)}/${formatBytes(performanceData.peakMemAlloc)},
+                PRS: ${formatSeconds(performanceData.peakNanosecondsPerRequest)}
+            `;
+        } catch (error) {
+            console.error("Error parsing X-Performance header:", error);
+        }
+    }
+
+    //
+    window.originalFetch = window.fetch;
+    window.fetch = async function (input, init) {
+        try {
+            const response = await originalFetch(input, init);
+            processPerformanceHeader(response.headers.get('X-Performance'));
+
+            return response;
+        } catch (error) {
+            throw error; // Re-throw the error so fetch behaves as expected
+        }
+    };
+})();
+
+(() => { // Utility functions that aren't independant
+
+})();
+
+    </script>
+</html>
