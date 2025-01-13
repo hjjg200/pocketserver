@@ -1307,7 +1307,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const memstats = serverInfoContainer.querySelector(".memstats");
     const checkServerInterval = 5 * 60 * 1000;
     let checkServerHandle;
-    window.checkServer = debounce(2000.0, async function () {
+    window.checkServer = throttle(2000.0, async function () {
 
         fetch('/ping') // prevent recursive
             .catch(err => {
@@ -1318,6 +1318,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     });
     checkServerHandle = setInterval(checkServer, checkServerInterval);
+
+    document.addEventListener("play", checkServer, true);
+    document.addEventListener("load", checkServer, true);
 
     //
     window.totalSizeInfo = document.querySelector(".total-size-info");
