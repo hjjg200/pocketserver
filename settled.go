@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"hash/crc32"
 	"sync"
+	"sort"
 	"runtime"
 )
 
@@ -560,28 +560,51 @@ func staticHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//
-	ext := filepath.Ext(p)
+	var master = p == "static/"
+	var etag string
+	var ok bool
+	if master {
 
-	// Get ETag
-    etag, ok := gEmbedStaticEtags[p]
-    if !ok {
-		http.Error(w, "Not found", http.StatusNotFound)
-        return
-    }
+		// Master record
+		etag = gEmbedStaticEtags["master.etag"]
+		
+	} else {
 
-    // Check If-None-Match header
-    if r.Header.Get("If-None-Match") == etag {
-        w.WriteHeader(http.StatusNotModified)
-        return
-    }
-
-	data, _ := gEmbedStatic.ReadFile(p)
-	if ext == ".svg" {
-		str := string(data)
-		str  = processSvg(str, r.URL.Query())
-		data = []byte(str)
+		// Get ETag
+		etag, ok = gEmbedStaticEtags[p]
+		if !ok {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+	
+	}
+	
+	// Check If-None-Match header
+	logDebug("ETAG", r.Header.Get("If-None-Match"), "server", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
 	}
 
+	//
+	var data []byte
+
+	if master {
+
+		data = []byte(gEmbedStaticEtags["master.json"])
+
+	} else {
+		
+		ext := filepath.Ext(p)
+		data, _ = gEmbedStatic.ReadFile(p)
+		if ext == ".svg" {
+			str := string(data)
+			str  = processSvg(str, r.URL.Query())
+			data = []byte(str)
+		}
+
+	}
+	
     w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "public, no-cache")
 	http.ServeContent(w, r, filepath.Base(p), time.Time{}, bytes.NewReader(data))
@@ -606,13 +629,23 @@ func populateEmbedEtags() {
                 logFatal(fmt.Errorf("Error reading file %s: %w", path, err))
             }
 
-            // Compute CRC32 hash
-            crc32Hash := crc32.ChecksumIEEE(data)
-
             // Store the ETag (as a string) in the map
-			etag := fmt.Sprintf("\"%x\"", crc32Hash)
+			etag := fmt.Sprintf("\"%x\"", getCRC32OfBytes(data))
             gEmbedStaticEtags[path] = etag
         }
     }
+
+	// Create a master json and etag
+	keys := make([]string, 0, len(gEmbedStaticEtags))
+	for key := range gEmbedStaticEtags {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	masterErag := getCRC32OfBytes([]byte(strings.Join(keys, ",")))
+	masterJson, err := json.Marshal(gEmbedStaticEtags)
+	must(err)
+
+	gEmbedStaticEtags["master.etag"] = masterErag
+	gEmbedStaticEtags["master.json"] = string(masterJson)
 
 }

@@ -1,7 +1,7 @@
 
 
 const CACHE_NAME = 'pocketserver-v1';
-const STATIC_RESOURCES = ['/static/crc32.js'];
+const STATIC_RESOURCES = [];
 const API_ENDPOINTS = ['/list'];
 
 
@@ -12,15 +12,23 @@ async function handleStaticResource(request) {
     
     if (cachedResponse) {
         // We have a cache, check if we can validate it
+        const etag = cachedResponse.headers.get('Etag');
         const cachedLastModified = cachedResponse.headers.get('Last-Modified');
         
+        const headers = new Headers();
+        if (etag) {
+            headers.set('If-None-Match', etag); // Use ETag as-is
+        }
+    
+        if (cachedLastModified) {
+            headers.set('If-Modified-Since', cachedLastModified); // Use Last-Modified if present
+        }
+
         if (cachedLastModified) {
             try {
                 // Validate cache with conditional request
                 const conditionalRequest = new Request(request, {
-                    headers: {
-                        'If-Modified-Since': cachedLastModified
-                    }
+                    headers
                 });
                 
                 const networkResponse = await fetch(conditionalRequest);
@@ -100,15 +108,24 @@ self.addEventListener('fetch', event => {
     }
 });
 
-self.addEventListener('install', event => {
+self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => {
-                console.log('Pre-caching static resources');
-                return cache.addAll(STATIC_RESOURCES);
+        fetch('/static/') // Fetch list of static files
+            .then((response) => response.json())
+            .then((masterJson) => {
+                files = Object.keys(masterJson);
+                STATIC_RESOURCES.push(...files);
+
+                return caches.open(CACHE_NAME).then((cache) => {
+                    console.log('Caching static files:', files);
+                    return cache.addAll(files);
+                });
             })
-    );
-});
+            .catch((err) => {
+                console.error('Failed to fetch static files list:', err);
+            })
+        );
+  });
 
 self.addEventListener('activate', event => {
     const cacheWhitelist = [CACHE_NAME];

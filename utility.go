@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"hash/crc32"
 	"encoding/hex"
 	"encoding/pem"
 	"encoding/json"
@@ -381,4 +382,9 @@ func formatShortTimestamp(since time.Time, at time.Time) string {
 
 	return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, seconds)
 
+}
+
+func getCRC32OfBytes(data []byte) string {
+	crc32Hash := crc32.ChecksumIEEE(data)
+	return fmt.Sprintf("%x", crc32Hash)
 }
