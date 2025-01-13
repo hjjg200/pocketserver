@@ -30,6 +30,8 @@ const METADATA_DIR = "./metadata"
 const UPLOADS = "./uploads"
 const CERT_PEM = "cert.pem"
 const KEY_PEM = "key.pem"
+const ROOT_CERT_PEM = "root_cert.pem"
+const ROOT_KEY_PEM = "root_key.pem"
 const AUTH_JSON = "auth.json"
 
 const CONTEXT_KEY_REQUEST_ID = 0
@@ -49,10 +51,11 @@ const FFMPEG_CMD_AUDIO_THUMB = "-an -c:v copy '%s'"
 const FFMPEG_CMD_AUDIO_THUMB_SMALL = "-vf 'scale=iw*sqrt(16384/(iw*ih)):-1' -an -c:v libwebp -q:v 80 '%s'"
 const FFMPEG_CMD_VIDEO_THUMB = "-ss 00:00:01 -vframes 1 '%s'"
 
-const LOG_RED    = "\033[31m"
-const LOG_GREEN  = "\033[32m"
-const LOG_BLUE   = "\033[34m"
-const LOG_RESET  = "\033[0m" // Reset to default color
+const LOG_RED		= "\033[31m"
+const LOG_GREEN		= "\033[32m"
+const LOG_BLUE		= "\033[34m"
+const LOG_INVERSE	= "\033[7m"
+const LOG_RESET		= "\033[0m" // Reset to default color
 
 var gMetadataManager *MetadataManager
 
@@ -202,8 +205,7 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 		filepath.Base(r.URL.Query().Get(QUERY_ALBUM)),
 	)
 
-	// TODO check if modified
-
+	// Update
 	err := gMetadataManager.UpdateDir(dir)
 	logDebug("update dir", dir)
 	if err != nil {
@@ -212,14 +214,24 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, ok := gMetadataManager.Get(dir, r.URL.Query().Has(QUERY_DETAILS))
+	// Get cache
+	data, mod, ok := gMetadataManager.Get(dir, r.URL.Query().Has(QUERY_DETAILS))
 	if !ok {
 		logHTTPRequest(r, http.StatusNotFound, "Invalid directory: ", dir)
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
+	// TODO check if modified
+	if checkNotModified(r, mod) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	logDebug("HEADERS", r.Header, "mod:", mod)
+
+	w.Header().Set("Cache-Control", "public, no-cache")
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Last-Modified", mod.UTC().Format(http.TimeFormat))
 	fmt.Fprint(w, string(data))
 
 }
@@ -289,7 +301,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		w.Header().Set("Cache-Control", "public, no-cache") // Cache for 1 day
+		w.Header().Set("Cache-Control", "public, no-cache")
 		http.ServeContent(w, r, base, info.ModTime(), bytes.NewReader(thumb))
 
 	} else {
@@ -563,7 +575,7 @@ func main() {
 	// Auth
 	loadAuthCookies()
 
-	ensureTLSCertificate("cert.pem", "key.pem")
+	ensureTLSCertificate("cert.pem", "key.pem", li)
 	server := &http.Server{
 		Addr: ":443",
 		Handler: httpsMux,

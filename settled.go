@@ -33,6 +33,7 @@ var gAppInfo AppInfo
 
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {
+	logDebug("HEADERS", r.Header)
 	fmt.Fprint(w, "imageserverpong")
 }
 

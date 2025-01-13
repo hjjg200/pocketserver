@@ -11,7 +11,6 @@ import (
 	"mime"
 )
 
-
 type Metadata struct {
 	mu sync.Mutex
 
@@ -40,6 +39,7 @@ type metadataCache struct {
 	changedDetails	bool
 	json			[]byte
 	dir				string
+	mod				time.Time
 }
 
 type MetadataManager struct {
@@ -60,7 +60,7 @@ func NewMetadataManager() *MetadataManager {
 
 }
 
-func (mgr *MetadataManager) Get(dir string, waitDetails bool) (data []byte, ok bool) {
+func (mgr *MetadataManager) Get(dir string, waitDetails bool) (data []byte, mod time.Time, ok bool) {
 
 	mgr.mu.RLock()
 	defer mgr.mu.RUnlock()
@@ -70,19 +70,19 @@ func (mgr *MetadataManager) Get(dir string, waitDetails bool) (data []byte, ok b
 		return
 	}
 
-	data = cache.get(waitDetails)
+	data, mod = cache.get(waitDetails)
 	ok = true
 	return
 
 }
 
-func (cache *metadataCache) get(waitDetails bool) ([]byte) {
+func (cache *metadataCache) get(waitDetails bool) ([]byte, time.Time) {
 	
 	cache.mu.RLock()
 	defer cache.mu.RUnlock()
 	
 	if waitDetails {
-		cache.detailsWg.Wait()
+		cache.detailsWg.Wait() // TODO fix race
 
 		if cache.changedDetails {
 			logDebug("details changed")
@@ -100,9 +100,10 @@ func (cache *metadataCache) get(waitDetails bool) ([]byte) {
 			panic(err)
 		}
 		cache.json = data
+		cache.mod = time.Now()
 	}
 
-	return cache.json
+	return cache.json, cache.mod
 
 }
 

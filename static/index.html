@@ -462,6 +462,17 @@ document.addEventListener("DOMContentLoaded", () => {
     checkServer();
 });
 
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/service-worker.js')
+        .then(registration => {
+            console.log('Service Worker registered with scope:', registration.scope);
+        })
+        .catch(error => {
+            console.error('Service Worker registration failed:', error);
+        });
+}
+
+
 
 
 
@@ -538,7 +549,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         (async () => {
             const url = buildURL(URL_LIST, {[QUERY_ALBUM]: album});
-            const response = await fetch(url);
+            const response = await fetch(url, {cache: "no-cache"});
             const metaMap = await response.json();
 
             sub.textContent = formatAlbumInfo(metaMap);
@@ -723,9 +734,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const detailsUrl = buildURL(url, {[QUERY_DETAILS]: null});
         const bodiesQueue = [];
 
-        let response = await fetch(url);
-        let detailsPromise = fetch(detailsUrl);
-        let metaMap = await response.json();
+        let response        = await fetch(url, {cache: "no-cache"});
+        let detailsPromise  = fetch(detailsUrl, {cache: "no-cache"});
+        let metaMap         = await response.json();
 
         window.gMetadataMap = metaMap;
         cleanup_list();
