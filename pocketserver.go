@@ -263,8 +263,11 @@ func checkNotModified(r *http.Request, mod time.Time) bool {
 
 }
 
-func checkPreservedAlbum(r *http.Request, album string) bool {
+func checkPreservedAlbum(w http.ResponseWriter, r *http.Request, album string) bool {
 
+	w.Header().Set("X-Preserved-Albums", base64.StdEncoding.EncodeToString([]byte("[]")))
+
+	//
 	cookie, err := r.Cookie("preservedAlbums")
 
 	if err != nil {
@@ -283,7 +286,9 @@ func checkPreservedAlbum(r *http.Request, album string) bool {
 		logWarn("Failed to read preserved albums json", err)
 		return false
 	}
+	
 	logDebug("PRESERVED", albums)
+	w.Header().Set("X-Preserved-Albums", cookie.Value)
 
 	for _, rhs := range albums {
 		if rhs == album {
@@ -305,7 +310,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		filepath.Base(album),
 	)
 	fullpath := filepath.Join(dir, base)
-	preserved := checkPreservedAlbum(r, album)
+	preserved := checkPreservedAlbum(w, r, album)
 
 	if query.Has(QUERY_THUMBNAIL) {
 

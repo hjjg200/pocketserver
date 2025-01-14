@@ -1,11 +1,14 @@
 
 //importScripts('/static/utility.js'); no browser API
 
-const CACHE_NAME = 'pocketserver-v1.3';
+const CACHE_NAME = 'pocketserver-v1.15';
 const DB_NAME = 'pocketserver-db';
 const DB_STORE = 'store';
-const STATIC_RESOURCES = ['/'];
+const STATIC_RESOURCES = [];
 const API_ENDPOINTS = ['/list'];
+const X_PRESERVED_ALBUMS = "X-Preserved-Albums";
+
+let gPreservedAlbums = [];
 
 
 // Cache-first strategy for static resources
@@ -166,109 +169,132 @@ async function storeInIndexedDB(key, value, metadata = {}) {
 }
 
 
+async function checkPreservedAlbumsChanged(fetchResponse) {
+    
+    const cached = await getFromIndexedDB(X_PRESERVED_ALBUMS);
+
+    if (cached && cached.value) {
+        gPreservedAlbums = cached.value;
+    }
+
+    const b64   = fetchResponse.headers.get(X_PRESERVED_ALBUMS) || "";
+    const rhs   = JSON.parse(atob(b64) || "[]");
+    rhs.sort();
+    const same = (gPreservedAlbums.length == rhs.length) &&
+        gPreservedAlbums.every((value, index) => value === rhs[index]);
+
+    console.log(same, gPreservedAlbums, rhs, b64);
+    if (!same) {
+        gPreservedAlbums = rhs;
+        await storeInIndexedDB(X_PRESERVED_ALBUMS, rhs);
+    }
+
+}
+
 // Cache-first strategy for static resources using IndexedDB
 async function handleIndexedDBResource(request) {
     const requestKey = request.url; // Use the request URL as the key
-    const cachedData = await getFromIndexedDB(requestKey);
+    let cachedData;
+
+    try {
+        cachedData = await getFromIndexedDB(requestKey);
+    } catch (error) {
+        console.error('Failed to get data from IndexedDB:', error);
+        cachedData = null;
+    }
 
     if (cachedData) {
-        const { value: cachedResponse, metadata } = cachedData;
+        const { value: cachedResponse, metadata } = cachedData || {};
         const etag = metadata?.etag;
         const cachedLastModified = metadata?.lastModified;
 
         const headers = new Headers();
-        if (etag) {
-            headers.set('If-None-Match', etag);
-        }
+        if (etag) headers.set('If-None-Match', etag);
+        if (cachedLastModified) headers.set('If-Modified-Since', cachedLastModified);
 
-        if (cachedLastModified) {
-            headers.set('If-Modified-Since', cachedLastModified);
-        }
+        try {
+            const conditionalRequest = new Request(request, { headers });
+            const networkResponse = await fetch(conditionalRequest);     
 
-        if (cachedLastModified || etag) {
-            try {
-                // Validate cache with conditional request
-                const conditionalRequest = new Request(request, {
-                    headers,
-                });
-                const networkResponse = await fetch(conditionalRequest);
+            checkPreservedAlbumsChanged(networkResponse);
 
-                if (networkResponse.status === 304) {
-                    // Cache is still valid
-                    console.log('Static resource not modified, using cache');
-                    return new Response(cachedResponse.body, cachedResponse.options);
-                } else {
-                    // Resource changed, update cache quietly
-                    console.log('Static resource modified, updating IndexedDB');
-                    const newMetadata = {
-                        etag: networkResponse.headers.get('Etag'),
-                        lastModified: networkResponse.headers.get('Last-Modified'),
-                    };
-                    const newValue = {
-                        body: await networkResponse.clone().text(),
-                        options: {
-                            headers: networkResponse.headers,
-                            status: networkResponse.status,
-                            statusText: networkResponse.statusText,
-                        },
-                    };
-                    await storeInIndexedDB(requestKey, {
-                        body: await networkResponse.clone().text(),
-                        options: {
-                            headers: serializeHeaders(networkResponse.headers),
-                            status: networkResponse.status,
-                            statusText: networkResponse.statusText,
-                        },
-                    }, newMetadata);
-                    return networkResponse;
+            if (networkResponse.status === 304) {
+                console.log('Static resource not modified, using cache');
+                if (cachedResponse) {
+                    return new Response(cachedResponse.body, {
+                        headers: deserializeHeaders(cachedResponse.options?.headers || {}),
+                        status: cachedResponse.options?.status || 200,
+                        statusText: cachedResponse.options?.statusText || 'OK',
+                    });
                 }
-            } catch (error) {
-                console.log('Network error for static resource, using cache');
+            } else {
+                console.log('Static resource modified, updating IndexedDB');
+                const newMetadata = {
+                    etag: networkResponse.headers.get('Etag'),
+                    lastModified: networkResponse.headers.get('Last-Modified'),
+                };
+
+                const newValue = {
+                    body: await networkResponse.clone().text(),
+                    options: {
+                        headers: serializeHeaders(networkResponse.headers),
+                        status: networkResponse.status,
+                        statusText: networkResponse.statusText,
+                    },
+                };
+
+                try {
+                    await storeInIndexedDB(requestKey, newValue, newMetadata);
+                } catch (error) {
+                    console.error('Failed to store data in IndexedDB:', error);
+                }
+
+                return networkResponse;
+            }
+        } catch (error) {
+            console.log('Network error for static resource, using cache:', error);
+            if (cachedResponse) {
                 return new Response(cachedResponse.body, {
-                    headers: deserializeHeaders(cachedResponse.options.headers),
-                    status: cachedResponse.options.status,
-                    statusText: cachedResponse.options.statusText,
+                    headers: deserializeHeaders(cachedResponse.options?.headers || {}),
+                    status: cachedResponse.options?.status || 200,
+                    statusText: cachedResponse.options?.statusText || 'OK',
                 });
             }
         }
-
-        // No validation headers, just use the cache
-        return new Response(cachedResponse.body, {
-            headers: deserializeHeaders(cachedResponse.options.headers),
-            status: cachedResponse.options.status,
-            statusText: cachedResponse.options.statusText,
-        });
     }
 
     // Nothing in cache, fetch and store
     try {
         const networkResponse = await fetch(request);
+     
+        checkPreservedAlbumsChanged(networkResponse);
+
         const newMetadata = {
             etag: networkResponse.headers.get('Etag'),
             lastModified: networkResponse.headers.get('Last-Modified'),
         };
+
         const newValue = {
-            body: await networkResponse.clone().text(),
-            options: {
-                headers: networkResponse.headers,
-                status: networkResponse.status,
-                statusText: networkResponse.statusText,
-            },
-        };
-        await storeInIndexedDB(requestKey, {
             body: await networkResponse.clone().text(),
             options: {
                 headers: serializeHeaders(networkResponse.headers),
                 status: networkResponse.status,
                 statusText: networkResponse.statusText,
             },
-        }, newMetadata);
+        };
+
+        try {
+            await storeInIndexedDB(requestKey, newValue, newMetadata);
+        } catch (error) {
+            console.error('Failed to store data in IndexedDB:', error);
+        }
+
         return networkResponse;
     } catch (error) {
+        console.error('Network error:', error);
         return new Response('Network error', { status: 500 });
     }
 }
-
 
 
 
@@ -277,35 +303,14 @@ self.addEventListener('fetch', event => {
 
     const url       = new URL(event.request.url);
     const path      = url.pathname; // Extract the pathname (a string)
-    
-    if (STATIC_RESOURCES.some(resource => url.pathname.includes(resource))) {
+
+    if (path.startsWith('/view')) {
+        event.respondWith(handleIndexedDBResource(event.request));
+    } else if (path === "/" || STATIC_RESOURCES.some(resource => path.includes(resource))) {
         event.respondWith(handleStaticResource(event.request));
-    } else if (API_ENDPOINTS.some(endpoint => url.pathname.includes(endpoint))) {
+    } else if (API_ENDPOINTS.some(endpoint => path.includes(endpoint))) {
         event.respondWith(handleStaticResource(event.request));
         //event.respondWith(handleApiRequest(event.request));
-    } else if (path.startsWith('/view')) {
-        event.respondWith(handleIndexedDBResource(event.request));
-
-        return;
-        event.respondWith(
-            fetch(event.request)
-                .then((response) => {
-                    const clonedResponse = response.clone();
-                    clonedResponse.blob().then((blob) => {
-                        // Store the response in IndexedDB
-                        storeInIndexedDB(requestUrl, blob);
-                    });
-                    return response;
-                })
-                .catch(() => {
-                    // Serve from IndexedDB if offline
-                    return getFromIndexedDB(requestUrl).then((data) => {
-                        return new Response(data, {
-                            headers: { 'Content-Type': 'image/jpeg' },
-                        });
-                    });
-                })
-        );
     }
 
 
