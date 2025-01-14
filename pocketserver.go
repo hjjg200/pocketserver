@@ -312,6 +312,14 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 	checkPreservedAlbum(w, r, album)
 	w.Header().Set("Cache-Control", "public, no-store")
 
+	/*
+	ext := filepath.Ext(base)
+	if ext == "" {
+		// Serve as attachment when no extension
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", base))
+	}*/
+
 	if query.Has(QUERY_THUMBNAIL) {
 
 		// Paths
@@ -631,13 +639,22 @@ func main() {
 		httpMux := httpFilterMiddleware(mux)
 		httpMux  = performanceMiddleware(httpMux)
 
-		http.ListenAndServe(":80", httpMux)
+		for {
+			logError(http.ListenAndServe(":80", httpMux))
+			time.Sleep(time.Second * 10)
+			logError("Attempting HTTP restart...")
+		}
 	}()
 
 	// Start the server
 	logInfo("SERVER STARTED AT", now.Format(time.RFC3339), fmt.Sprint("(", time.Now().Sub(now),")"))
 	logInfo("http://" + gAppInfo.LocalIP)
 	logInfo("https://" + gAppInfo.LocalIP)
-	logFatal(server.ListenAndServeTLS(CERT_PEM, KEY_PEM)) // Certificates are already provided in memory
+
+	for {
+		logError(server.ListenAndServeTLS(CERT_PEM, KEY_PEM)) // Certificates are already provided in memory
+		time.Sleep(time.Second * 10)
+		logError("Attempting HTTPS restart...")
+	}
 
 }
