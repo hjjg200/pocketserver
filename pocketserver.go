@@ -265,8 +265,6 @@ func checkNotModified(r *http.Request, mod time.Time) bool {
 
 func checkPreservedAlbum(w http.ResponseWriter, r *http.Request, album string) bool {
 
-	w.Header().Set("X-Preserved-Albums", base64.StdEncoding.EncodeToString([]byte("[]")))
-
 	//
 	cookie, err := r.Cookie("preservedAlbums")
 
@@ -310,7 +308,9 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		filepath.Base(album),
 	)
 	fullpath := filepath.Join(dir, base)
-	preserved := checkPreservedAlbum(w, r, album)
+
+	checkPreservedAlbum(w, r, album)
+	w.Header().Set("Cache-Control", "public, no-store")
 
 	if query.Has(QUERY_THUMBNAIL) {
 
@@ -332,7 +332,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/static/default_artwork.jpg", http.StatusSeeOther)
 			return
 		}
-		if preserved && checkNotModified(r, info.ModTime()) {
+		if checkNotModified(r, info.ModTime()) {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
@@ -345,9 +345,6 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if preserved {
-			w.Header().Set("Cache-Control", "public, no-cache")
-		}
 		http.ServeContent(w, r, base, info.ModTime(), bytes.NewReader(thumb))
 
 	} else {
@@ -374,15 +371,12 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Check mod time
-		if preserved && checkNotModified(r, info.ModTime()) {
+		if checkNotModified(r, info.ModTime()) {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
 		
 		// Serve the content
-		if preserved {
-			w.Header().Set("Cache-Control", "public, no-cache")
-		}
 		http.ServeContent(w, r, filepath.Base(fullpath), info.ModTime(), file)
 		return
 	

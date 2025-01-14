@@ -302,6 +302,33 @@
     color: #999;
 }
 
+
+
+
+.upload-options {
+    height: 1.5rem;
+    margin-bottom: -1.5rem;
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 .3rem;
+}
+.cache-album-container label {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+}
+input#cache-album {
+    appearance: checkbox;
+    -webkit-appearance: checkbox;
+    margin-right: 0.3rem;
+}
+.cache-album-container label > * {
+    display: block;
+    color: #bbb;
+    font-size: 0.8rem;
+}
+
         </style>
     </head>
     <body>
@@ -326,6 +353,14 @@
                         Upload
                         <input type="file" id="upload-input" name="filename" multiple>
                     </label>
+                </div>
+                <div class="upload-options">
+                    <div class="cache-album-container">
+                        <label>
+                            <input type="checkbox" id="cache-album">
+                            <span>Cache Album</span>
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -456,6 +491,9 @@ const QUERY_DETAILS = "details";
 const URL_VIEW = "/view";
 const URL_LIST = "/list";
 
+const X_PRESERVED_ALBUMS = "X-Preserved-Albums";
+const COOKIE_PRESERVED_ALBUMS = "preservedAlbums";
+
 const TYPES_MEDIA = ["image", "video", "audio"];
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -476,21 +514,24 @@ if ('serviceWorker' in navigator) {
 
 
 
-
 (() => { // LIST
         
     // Album
     window.gAlbum = null;
-    
-    document.addEventListener("DOMContentLoaded", () => {
-        changeAlbum(getQueryParam(QUERY_ALBUM));
-    });
 
     const albumTitleContainer = document.querySelector(".album-title-container");
     const backToHome = albumTitleContainer.querySelector(".back-to-home");
     const albumTitle = albumTitleContainer.querySelector(".album-title");
     const albumsList = document.querySelector(".albums-list");
     const albumCreate = albumsList.querySelector(".album-create");
+    const cacheAlbumCheck = document.getElementById("cache-album");
+
+    
+    document.addEventListener("DOMContentLoaded", () => {
+        ensurePreservedAlbums();
+
+        changeAlbum(getQueryParam(QUERY_ALBUM));
+    });
 
     let formatSrc;
 
@@ -509,6 +550,9 @@ if ('serviceWorker' in navigator) {
         gAlbum = album;
         populate_list();
 
+        const preserved = JSON.parse(atob(getCookie(COOKIE_PRESERVED_ALBUMS)));
+        cacheAlbumCheck.checked = preserved.indexOf(gAlbum) !== -1;
+
     }
 
     backToHome.addEventListener("click", () => {
@@ -516,6 +560,37 @@ if ('serviceWorker' in navigator) {
     });
     window.addEventListener('popstate', (event) => {
         changeAlbum(getQueryParam(QUERY_ALBUM));
+    });
+
+    function ensurePreservedAlbums() {
+        if (getCookie(COOKIE_PRESERVED_ALBUMS) === null) {
+            setPlainCookie(COOKIE_PRESERVED_ALBUMS, btoa("[]"), 365*10);
+        }
+    }
+
+    function setAlbumPreserved(album, value) {
+        ensurePreservedAlbums();
+
+        const b64 = getCookie(COOKIE_PRESERVED_ALBUMS);
+        const preserved = JSON.parse(atob(b64));
+        const i = preserved.indexOf(album);
+
+        if (value && i === -1) {
+            preserved.push(album);
+        } else if (value === false && i !== -1) {
+            preserved.splice(i, 1);
+        } else {
+            return;
+        }
+        
+        setPlainCookie(COOKIE_PRESERVED_ALBUMS, btoa(JSON.stringify(preserved)), 365*10);
+
+        // Ping to update X-Preserved-Albums
+        checkServer();
+    }
+
+    cacheAlbumCheck.addEventListener("change", event => {
+        setAlbumPreserved(gAlbum, event.target.checked);
     });
 
     function addAlbum(album) {

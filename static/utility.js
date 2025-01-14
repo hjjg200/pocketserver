@@ -214,14 +214,16 @@ function createSlider(slider, initialValue, updateOnDrag, callback, binder) {
 
 
 function formatDuration(durationString) {
-    if (!durationString || durationString.length < 8) return "N/A";
-
-    const [hours, minutes, seconds] = durationString.split(':');
-    const [wholeSeconds] = seconds.split('.'); // Drop decimal part
-    if (hours === '00') {
-        return `${minutes}:${wholeSeconds}`;
+    try {
+        const [hours, minutes, seconds] = durationString.split(':');
+        const [wholeSeconds] = seconds.split('.'); // Drop decimal part
+        if (hours === '00') {
+            return `${minutes}:${wholeSeconds}`;
+        }
+        return `${hours}:${minutes}:${wholeSeconds}`;
+    } catch {
+        return "N/A";
     }
-    return `${hours}:${minutes}:${wholeSeconds}`;
 }
 
 async function fetchJSON(url) {

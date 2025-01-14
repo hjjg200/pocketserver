@@ -1,14 +1,16 @@
 
 //importScripts('/static/utility.js'); no browser API
 
-const CACHE_NAME = 'pocketserver-v1.15';
+const CACHE_NAME = 'pocketserver-v1.18';
 const DB_NAME = 'pocketserver-db';
 const DB_STORE = 'store';
-const STATIC_RESOURCES = [];
+const STATIC_RESOURCES = ['/'];
 const API_ENDPOINTS = ['/list'];
 const X_PRESERVED_ALBUMS = "X-Preserved-Albums";
 
 let gPreservedAlbums = [];
+
+
 
 
 // Cache-first strategy for static resources
@@ -168,6 +170,65 @@ async function storeInIndexedDB(key, value, metadata = {}) {
     });
 }
 
+// Function to clean up IndexedDB entries based on URL query
+let handleCleanupQuery = null;
+function setTimeoutCleanupQuery(timeoutMs = 1000 * 20) {
+    const dbRequest = indexedDB.open(DB_NAME, 1);
+
+    dbRequest.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(DB_STORE)) {
+            db.createObjectStore(DB_STORE, { keyPath: 'key' }); // Assuming 'key' is the primary key
+        }
+    };
+
+    dbRequest.onsuccess = (event) => {
+        const db = event.target.result;
+
+        // Set up periodic cleanup
+        clearTimeout(handleCleanupQuery);
+        handleCleanupQuery = setTimeout(() => {
+
+            const transaction = db.transaction(DB_STORE, 'readwrite');
+            const store = transaction.objectStore(DB_STORE);
+
+            store.openCursor().onsuccess = (cursorEvent) => {
+                const cursor = cursorEvent.target.result;
+                if (cursor) {
+                    try {
+                        const url = new URL(cursor.key);
+                        const album = url.searchParams.get("album") || "";
+
+                        // Check if the query parameter matches the target value
+                        if (!gPreservedAlbums.includes(album)) {
+                            console.log('Deleting record with matching query:', url);
+                            cursor.delete(); // Delete the record
+                        }
+                    } catch (error) {
+                        //console.error('Error parsing URL or query parameters:', error);
+                    }
+
+                    cursor.continue(); // Move to the next record
+                }
+            };
+
+            transaction.oncomplete = () => {
+                console.log('Periodic cleanup complete.');
+            };
+
+            transaction.onerror = (err) => {
+                console.error('Error during periodic cleanup:', err);
+            };
+        }, timeoutMs);
+    };
+
+    dbRequest.onerror = (err) => {
+        console.error('Error opening IndexedDB:', err);
+    };
+}
+
+
+
 
 async function checkPreservedAlbumsChanged(fetchResponse) {
     
@@ -177,8 +238,12 @@ async function checkPreservedAlbumsChanged(fetchResponse) {
         gPreservedAlbums = cached.value;
     }
 
-    const b64   = fetchResponse.headers.get(X_PRESERVED_ALBUMS) || "";
-    const rhs   = JSON.parse(atob(b64) || "[]");
+    const b64   = fetchResponse.headers.get(X_PRESERVED_ALBUMS);
+
+    if (!b64)
+        return;
+
+    const rhs = JSON.parse(atob(b64) || "[]");
     rhs.sort();
     const same = (gPreservedAlbums.length == rhs.length) &&
         gPreservedAlbums.every((value, index) => value === rhs[index]);
@@ -186,7 +251,9 @@ async function checkPreservedAlbumsChanged(fetchResponse) {
     console.log(same, gPreservedAlbums, rhs, b64);
     if (!same) {
         gPreservedAlbums = rhs;
+        
         await storeInIndexedDB(X_PRESERVED_ALBUMS, rhs);
+        setTimeoutCleanupQuery();
     }
 
 }
@@ -196,6 +263,9 @@ async function handleIndexedDBResource(request) {
     const requestKey = request.url; // Use the request URL as the key
     let cachedData;
 
+    const url = new URL(requestKey);
+    const album = url.searchParams.get("album") || "";
+
     try {
         cachedData = await getFromIndexedDB(requestKey);
     } catch (error) {
@@ -203,7 +273,7 @@ async function handleIndexedDBResource(request) {
         cachedData = null;
     }
 
-    if (cachedData) {
+    if (gPreservedAlbums.includes(album) && cachedData) {
         const { value: cachedResponse, metadata } = cachedData || {};
         const etag = metadata?.etag;
         const cachedLastModified = metadata?.lastModified;
@@ -244,6 +314,7 @@ async function handleIndexedDBResource(request) {
                 };
 
                 try {
+                    console.log("Store", album);
                     await storeInIndexedDB(requestKey, newValue, newMetadata);
                 } catch (error) {
                     console.error('Failed to store data in IndexedDB:', error);
@@ -269,24 +340,27 @@ async function handleIndexedDBResource(request) {
      
         checkPreservedAlbumsChanged(networkResponse);
 
-        const newMetadata = {
-            etag: networkResponse.headers.get('Etag'),
-            lastModified: networkResponse.headers.get('Last-Modified'),
-        };
-
-        const newValue = {
-            body: await networkResponse.clone().text(),
-            options: {
-                headers: serializeHeaders(networkResponse.headers),
-                status: networkResponse.status,
-                statusText: networkResponse.statusText,
-            },
-        };
-
-        try {
-            await storeInIndexedDB(requestKey, newValue, newMetadata);
-        } catch (error) {
-            console.error('Failed to store data in IndexedDB:', error);
+        if (gPreservedAlbums.includes(album)) {
+            const newMetadata = {
+                etag: networkResponse.headers.get('Etag'),
+                lastModified: networkResponse.headers.get('Last-Modified'),
+            };
+    
+            const newValue = {
+                body: await networkResponse.clone().text(),
+                options: {
+                    headers: serializeHeaders(networkResponse.headers),
+                    status: networkResponse.status,
+                    statusText: networkResponse.statusText,
+                },
+            };
+    
+            try {
+                console.log("Store", album);
+                await storeInIndexedDB(requestKey, newValue, newMetadata);
+            } catch (error) {
+                console.error('Failed to store data in IndexedDB:', error);
+            }
         }
 
         return networkResponse;
@@ -306,7 +380,7 @@ self.addEventListener('fetch', event => {
 
     if (path.startsWith('/view')) {
         event.respondWith(handleIndexedDBResource(event.request));
-    } else if (path === "/" || STATIC_RESOURCES.some(resource => path.includes(resource))) {
+    } else if (STATIC_RESOURCES.some(resource => path.includes(resource))) {
         event.respondWith(handleStaticResource(event.request));
     } else if (API_ENDPOINTS.some(endpoint => path.includes(endpoint))) {
         event.respondWith(handleStaticResource(event.request));
