@@ -15,6 +15,7 @@ A simple server built for use on iSH, an emulated linux on iOS.
 - placing your own `mime.types` in `/etc/mime.types` is recommended; refer to [static/mime.types](./static/mime.types)
 - ffmpeg is run using `popen` because I got invalid operation error
 - using HTTP is recommended for better throughput
+- calling repeated ReadDir on mounted icloud drive causes crash
 
 ## Features
 

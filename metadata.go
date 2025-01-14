@@ -107,6 +107,12 @@ func (cache *metadataCache) get(waitDetails bool) ([]byte, time.Time) {
 
 }
 
+func (mgr *MetadataManager) formatDirCacheName(dir string) string {
+	dir = strings.ReplaceAll(dir, "/", "")
+	dir = strings.ReplaceAll(dir, "\\", "")
+	return filepath.Join(gAppInfo.MetadataDir, dir) + ".json"
+}
+
 func (mgr *MetadataManager) AddDir(dir string) {
 
 	mgr.mu.Lock()
@@ -122,6 +128,16 @@ func (mgr *MetadataManager) AddDir(dir string) {
 		body: make(MetadataMap),
 	}
 
+	j, err := os.ReadFile(mgr.formatDirCacheName(dir))
+	if err != nil {
+		return
+	}
+
+	err = json.Unmarshal(j, &mgr.cacheMap[dir].body)
+	if err != nil {
+		logFatal("Failed to read cached data for", dir)
+	}
+
 }
 
 func (cache *metadataCache) update() error {
@@ -131,6 +147,7 @@ func (cache *metadataCache) update() error {
 	var added, removed int
 
 	// Check if changed
+	logInfo("Caching for", dir, "starting")
 	dentries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("Cannot read directory %s: %w", dir, err)
@@ -213,7 +230,17 @@ func (mgr *MetadataManager) UpdateDir(dir string) error {
 		return fmt.Errorf("Not found")
 	}
 
-	return cache.update()
+	err := cache.update()
+	if err != nil {
+		return err
+	}
+
+	j, err := json.Marshal(mgr.cacheMap[dir].body)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(mgr.formatDirCacheName(dir), j, 0644)
 
 }
 

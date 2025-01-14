@@ -26,7 +26,7 @@ var gEmbedStatic embed.FS
 var gEmbedStaticEtags map[string]string
 
 // General app context
-const METADATA_DIR = "./metadata"
+const METADATA_DIR = "./pocketserver-metadata"
 const UPLOADS = "./uploads"
 const CERT_PEM = "cert.pem"
 const KEY_PEM = "key.pem"
@@ -532,8 +532,13 @@ func main() {
 	addDefaultMimeTypes()
 
 	// Dirs
-	gAppInfo.UploadDir = mustFilepathRel(".", UPLOADS)
-	gAppInfo.MetadataDir = mustFilepathRel(".", METADATA_DIR)
+	home, err := os.UserHomeDir()
+	must(err)
+	gAppInfo.UploadDir = filepath.Join(".", UPLOADS)
+	gAppInfo.MetadataDir = filepath.Join(home, METADATA_DIR) // use emulated disk for better performance
+	logInfo("Upload directory is", gAppInfo.UploadDir)
+	logInfo("Metadata directory is", gAppInfo.MetadataDir)
+	logWarn("Ensure metadata directory is not in mounted icloud drive for performance issue")
 
 	// Upload Directory and cache
 	must(os.MkdirAll(gAppInfo.UploadDir, 0755))
