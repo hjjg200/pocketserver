@@ -1,10 +1,10 @@
 
 //importScripts('/static/utility.js'); no browser API
 
-const CACHE_NAME = 'pocketserver-v1.18';
-const DB_NAME = 'pocketserver-db';
+const CACHE_NAME = 'pocketserver-v1.20';
+const DB_NAME = CACHE_NAME + '-db';
 const DB_STORE = 'store';
-const STATIC_RESOURCES = ['/'];
+const STATIC_RESOURCES = [''];
 const API_ENDPOINTS = ['/list'];
 const X_PRESERVED_ALBUMS = "X-Preserved-Albums";
 
@@ -238,7 +238,7 @@ async function checkPreservedAlbumsChanged(fetchResponse) {
         gPreservedAlbums = cached.value;
     }
 
-    const b64   = fetchResponse.headers.get(X_PRESERVED_ALBUMS);
+    const b64 = fetchResponse.headers.get(X_PRESERVED_ALBUMS);
 
     if (!b64)
         return;
@@ -258,8 +258,140 @@ async function checkPreservedAlbumsChanged(fetchResponse) {
 
 }
 
-// Cache-first strategy for static resources using IndexedDB
+
+
+
+
+
+
+
 async function handleIndexedDBResource(request) {
+    const requestKey = request.url; // Use the request URL as the key
+    let cachedData;
+
+    const url = new URL(requestKey);
+    const album = url.searchParams.get("album") || "";
+
+    try {
+        cachedData = await getFromIndexedDB(requestKey);
+    } catch (error) {
+        console.error('Failed to get data from IndexedDB:', error);
+        cachedData = null;
+    }
+
+    if (gPreservedAlbums.includes(album) && cachedData) {
+        const { value: cachedResponse, metadata } = cachedData || {};
+        const etag = metadata?.etag;
+        const cachedLastModified = metadata?.lastModified;
+
+        const headers = new Headers();
+        if (etag) headers.set('If-None-Match', etag);
+        if (cachedLastModified) headers.set('If-Modified-Since', cachedLastModified);
+
+        try {
+            const conditionalRequest = new Request(request, { headers });
+            const networkResponse = await fetch(conditionalRequest);
+
+            await checkPreservedAlbumsChanged(networkResponse);
+
+            if (networkResponse.status === 304) {
+                console.log('Static resource not modified, using cache');
+                if (cachedResponse) {
+                    const responseHeaders = deserializeHeaders(cachedResponse.options?.headers || {});
+                    return new Response(cachedResponse.body, {
+                        headers: responseHeaders,
+                        status: cachedResponse.options?.status || 200,
+                        statusText: cachedResponse.options?.statusText || 'OK',
+                    });
+                }
+            } else {
+                return await updateCacheAndRespond(networkResponse, requestKey, album);
+            }
+        } catch (error) {
+            console.log('Network error for static resource, using cache:', error);
+            if (cachedResponse) {
+                const responseHeaders = deserializeHeaders(cachedResponse.options?.headers || {});
+                return new Response(cachedResponse.body, {
+                    headers: responseHeaders,
+                    status: cachedResponse.options?.status || 200,
+                    statusText: cachedResponse.options?.statusText || 'OK',
+                });
+            }
+        }
+    }
+
+    // Nothing in cache, fetch and store
+    try {
+        const networkResponse = await fetch(request);
+        await checkPreservedAlbumsChanged(networkResponse);
+        return await updateCacheAndRespond(networkResponse, requestKey, album);
+    } catch (error) {
+        console.error('Network error:', error);
+        return new Response('Network error', { status: 500 });
+    }
+}
+
+// Helper function to update IndexedDB and return the response
+async function updateCacheAndRespond(networkResponse, requestKey, album) {
+    if (gPreservedAlbums.includes(album)) {
+        const newMetadata = {
+            etag: networkResponse.headers.get('Etag'),
+            lastModified: networkResponse.headers.get('Last-Modified'),
+        };
+
+        let responseBody;
+        const contentType = networkResponse.headers.get('Content-Type') || '';
+
+        if (contentType.includes('application/json') || contentType.startsWith('text/')) {
+            responseBody = await networkResponse.clone().text();
+        } else {
+            responseBody = await networkResponse.clone().arrayBuffer();
+        }
+
+        const newValue = {
+            body: responseBody,
+            options: {
+                headers: serializeHeaders(networkResponse.headers),
+                status: networkResponse.status,
+                statusText: networkResponse.statusText,
+            },
+        };
+
+        try {
+            console.log("Storing in IndexedDB:", requestKey);
+            await storeInIndexedDB(requestKey, newValue, newMetadata);
+        } catch (error) {
+            console.error('Failed to store data in IndexedDB:', error);
+        }
+    }
+
+    const clonedResponse = networkResponse.clone();
+    const responseHeaders = new Headers(clonedResponse.headers);
+
+    return new Response(clonedResponse.body, {
+        headers: responseHeaders,
+        status: clonedResponse.status,
+        statusText: clonedResponse.statusText,
+    });
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Cache-first strategy for static resources using IndexedDB
+async function handleIndexedDBResource2(request) {
     const requestKey = request.url; // Use the request URL as the key
     let cachedData;
 
@@ -286,9 +418,10 @@ async function handleIndexedDBResource(request) {
             const conditionalRequest = new Request(request, { headers });
             const networkResponse = await fetch(conditionalRequest);     
 
-            checkPreservedAlbumsChanged(networkResponse);
+            await checkPreservedAlbumsChanged(networkResponse);
 
             if (networkResponse.status === 304) {
+
                 console.log('Static resource not modified, using cache');
                 if (cachedResponse) {
                     return new Response(cachedResponse.body, {
@@ -297,15 +430,28 @@ async function handleIndexedDBResource(request) {
                         statusText: cachedResponse.options?.statusText || 'OK',
                     });
                 }
+
             } else {
+
                 console.log('Static resource modified, updating IndexedDB');
+
                 const newMetadata = {
                     etag: networkResponse.headers.get('Etag'),
                     lastModified: networkResponse.headers.get('Last-Modified'),
                 };
+                    
+                let responseBody;
+                const contentType = networkResponse.headers.get('Content-Type') || '';
+        
+                // Handle binary and text responses differently
+                if (contentType.includes('application/json') || contentType.startsWith('text/')) {
+                    responseBody = await networkResponse.clone().text(); // Handle text responses
+                } else {
+                    responseBody = await networkResponse.clone().arrayBuffer(); // Handle binary responses
+                }
 
                 const newValue = {
-                    body: await networkResponse.clone().text(),
+                    body: responseBody,
                     options: {
                         headers: serializeHeaders(networkResponse.headers),
                         status: networkResponse.status,
@@ -323,6 +469,7 @@ async function handleIndexedDBResource(request) {
                 return networkResponse;
             }
         } catch (error) {
+
             console.log('Network error for static resource, using cache:', error);
             if (cachedResponse) {
                 return new Response(cachedResponse.body, {
@@ -331,6 +478,7 @@ async function handleIndexedDBResource(request) {
                     statusText: cachedResponse.options?.statusText || 'OK',
                 });
             }
+
         }
     }
 
@@ -338,16 +486,26 @@ async function handleIndexedDBResource(request) {
     try {
         const networkResponse = await fetch(request);
      
-        checkPreservedAlbumsChanged(networkResponse);
+        await checkPreservedAlbumsChanged(networkResponse);
 
         if (gPreservedAlbums.includes(album)) {
             const newMetadata = {
                 etag: networkResponse.headers.get('Etag'),
                 lastModified: networkResponse.headers.get('Last-Modified'),
             };
+
+            let responseBody;
+            const contentType = networkResponse.headers.get('Content-Type') || '';
+    
+            // Handle binary and text responses differently
+            if (contentType.includes('application/json') || contentType.startsWith('text/')) {
+                responseBody = await networkResponse.clone().text(); // Handle text responses
+            } else {
+                responseBody = await networkResponse.clone().arrayBuffer(); // Handle binary responses
+            }
     
             const newValue = {
-                body: await networkResponse.clone().text(),
+                body: responseBody,
                 options: {
                     headers: serializeHeaders(networkResponse.headers),
                     status: networkResponse.status,
@@ -378,10 +536,13 @@ self.addEventListener('fetch', event => {
     const url       = new URL(event.request.url);
     const path      = url.pathname; // Extract the pathname (a string)
 
+    console.log("ENTER", path);
+
     if (path.startsWith('/view')) {
         event.respondWith(handleIndexedDBResource(event.request));
-    } else if (STATIC_RESOURCES.some(resource => path.includes(resource))) {
+    } else if (STATIC_RESOURCES.some(resource => path.slice(1) === resource)) {
         event.respondWith(handleStaticResource(event.request));
+        console.log("STATIC", path);
     } else if (API_ENDPOINTS.some(endpoint => path.includes(endpoint))) {
         event.respondWith(handleStaticResource(event.request));
         //event.respondWith(handleApiRequest(event.request));
@@ -487,3 +648,59 @@ self.addEventListener('activate', event => {
     );
 });
 
+
+
+
+self.addEventListener('activate', (event) => {
+    const cacheWhitelist = [CACHE_NAME];
+    const dbWhitelist = [DB_NAME];
+
+    event.waitUntil(
+        (async () => {
+            // Clear outdated caches
+            const cacheNames = await caches.keys();
+            await Promise.all(
+                cacheNames.map((cacheName) => {
+                    if (!cacheWhitelist.includes(cacheName)) {
+                        console.log(`Deleting outdated cache: ${cacheName}`);
+                        return caches.delete(cacheName);
+                    }
+                })
+            );
+
+            // Clear outdated IndexedDB databases
+            const dbNamesRequest = indexedDB.databases();
+            const dbList = await dbNamesRequest;
+
+            await Promise.all(
+                dbList.map((db) => {
+                    if (!dbWhitelist.includes(db.name)) {
+                        console.log(`Deleting outdated IndexedDB: ${db.name}`);
+                        return deleteIndexedDB(db.name);
+                    }
+                })
+            );
+
+            console.log('Activation cleanup complete.');
+        })()
+    );
+});
+
+
+// Helper function to delete IndexedDB
+function deleteIndexedDB(dbName) {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(dbName);
+        request.onsuccess = () => {
+            console.log(`IndexedDB deleted: ${dbName}`);
+            resolve();
+        };
+        request.onerror = (error) => {
+            console.error(`Failed to delete IndexedDB: ${dbName}`, error);
+            reject(error);
+        };
+        request.onblocked = () => {
+            console.warn(`Delete operation blocked for IndexedDB: ${dbName}`);
+        };
+    });
+}
