@@ -600,7 +600,6 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", staticHandler)
 	mux.HandleFunc("/static/", staticHandler)
-	mux.HandleFunc("/service-worker.js", staticHandler)
 	mux.HandleFunc("/ping", pingHandler)
 	mux.HandleFunc("/view/", viewHandler)
 	mux.HandleFunc("/upload", uploadHandler)
