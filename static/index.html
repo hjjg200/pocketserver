@@ -357,7 +357,7 @@ input#cache-album {
                         <input type="file" id="upload-input" name="filename" multiple>
                     </label>
                 </div>
-                <div class="upload-options">
+                <div class="upload-options" style="display: none;">
                     <div class="cache-album-container">
                         <label>
                             <input type="checkbox" id="cache-album">
@@ -494,25 +494,12 @@ const QUERY_DETAILS = "details";
 const URL_VIEW = "/view";
 const URL_LIST = "/list";
 
-const X_PRESERVED_ALBUMS = "X-Preserved-Albums";
-const COOKIE_PRESERVED_ALBUMS = "preservedAlbums";
 
 const TYPES_MEDIA = ["image", "video", "audio"];
 
 document.addEventListener("DOMContentLoaded", () => {
     checkServer();
 });
-
-
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/service-worker.js')
-        .then(registration => {
-            console.log('Service Worker registered with scope:', registration.scope);
-        })
-        .catch(error => {
-            console.error('Service Worker registration failed:', error);
-        });
-}
 
 
 
@@ -527,12 +514,9 @@ if ('serviceWorker' in navigator) {
     const albumTitle = albumTitleContainer.querySelector(".album-title");
     const albumsList = document.querySelector(".albums-list");
     const albumCreate = albumsList.querySelector(".album-create");
-    const cacheAlbumCheck = document.getElementById("cache-album");
 
     
     document.addEventListener("DOMContentLoaded", () => {
-        ensurePreservedAlbums();
-
         changeAlbum(getQueryParam(QUERY_ALBUM));
     });
 
@@ -553,9 +537,6 @@ if ('serviceWorker' in navigator) {
         gAlbum = album;
         populate_list();
 
-        const preserved = JSON.parse(atob(getCookie(COOKIE_PRESERVED_ALBUMS)));
-        cacheAlbumCheck.checked = preserved.indexOf(gAlbum) !== -1;
-
     }
 
     backToHome.addEventListener("click", () => {
@@ -563,37 +544,6 @@ if ('serviceWorker' in navigator) {
     });
     window.addEventListener('popstate', (event) => {
         changeAlbum(getQueryParam(QUERY_ALBUM));
-    });
-
-    function ensurePreservedAlbums() {
-        if (getCookie(COOKIE_PRESERVED_ALBUMS) === null) {
-            setPlainCookie(COOKIE_PRESERVED_ALBUMS, btoa("[]"), 365*10);
-        }
-    }
-
-    function setAlbumPreserved(album, value) {
-        ensurePreservedAlbums();
-
-        const b64 = getCookie(COOKIE_PRESERVED_ALBUMS);
-        const preserved = JSON.parse(atob(b64));
-        const i = preserved.indexOf(album);
-
-        if (value && i === -1) {
-            preserved.push(album);
-        } else if (value === false && i !== -1) {
-            preserved.splice(i, 1);
-        } else {
-            return;
-        }
-        
-        setPlainCookie(COOKIE_PRESERVED_ALBUMS, btoa(JSON.stringify(preserved)), 365*10);
-
-        // Ping to update X-Preserved-Albums
-        checkServer();
-    }
-
-    cacheAlbumCheck.addEventListener("change", event => {
-        setAlbumPreserved(gAlbum, event.target.checked);
     });
 
     function addAlbum(album) {

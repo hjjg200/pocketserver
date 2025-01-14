@@ -12,8 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"encoding/base64"
-	"encoding/json"
 	"sync/atomic"
 	"mime"
 	"context"
@@ -263,40 +261,6 @@ func checkNotModified(r *http.Request, mod time.Time) bool {
 
 }
 
-func checkPreservedAlbum(w http.ResponseWriter, r *http.Request, album string) bool {
-
-	//
-	cookie, err := r.Cookie("preservedAlbums")
-
-	if err != nil {
-		return false
-	}
-
-	decodedBytes, err := base64.StdEncoding.DecodeString(cookie.Value)
-	if err != nil {
-		logWarn("Failed to read preserved albums", err)
-		return false
-	}
-
-	var albums = make([]string, 0)
-	err = json.Unmarshal(decodedBytes, &albums)
-	if err != nil {
-		logWarn("Failed to read preserved albums json", err)
-		return false
-	}
-	
-	logDebug("PRESERVED", albums)
-	w.Header().Set("X-Preserved-Albums", cookie.Value)
-
-	for _, rhs := range albums {
-		if rhs == album {
-			return true
-		}
-	}
-	return false
-
-}
-
 func viewHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Specify the path to your file
@@ -309,26 +273,17 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 	)
 	fullpath := filepath.Join(dir, base)
 
-	checkPreservedAlbum(w, r, album)
-	w.Header().Set("Cache-Control", "public, no-store")
-
-	/*
-	ext := filepath.Ext(base)
-	if ext == "" {
-		// Serve as attachment when no extension
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", base))
-	}*/
-
 	if query.Has(QUERY_THUMBNAIL) {
 
 		// Paths
 		thumbpath := filepath.Join(gAppInfo.MetadataDir, fullpath)
 		if query.Get(QUERY_THUMBNAIL) == "small" {
 			thumbpath += META_EXT_THUMB_SMALL
+			w.Header().Set("Cache-Control", "public, no-cache") // cache small ones
 			w.Header().Set("Content-Type", "image/webp")
 		} else {
 			thumbpath += META_EXT_THUMB
+			w.Header().Set("Cache-Control", "public, no-store")
 			w.Header().Set("Content-Type", "image/jpeg")
 		}
 
@@ -385,6 +340,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		
 		// Serve the content
+		w.Header().Set("Cache-Control", "public, no-store")
 		http.ServeContent(w, r, filepath.Base(fullpath), info.ModTime(), file)
 		return
 	

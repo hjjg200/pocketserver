@@ -12,11 +12,8 @@ import (
 	"strings"
 	"time"
 	"sync"
-	"sort"
 	"runtime"
 )
-
-
 
 
 type AppInfo struct {
@@ -555,28 +552,13 @@ func staticHandler(w http.ResponseWriter, r *http.Request) {
 	// Handle special cases
 	if p == "" {
 		p = "static/index.html"
-	} else if p == "service-worker.js" {
-		p = "static/" + p
 	}
 
-	//
-	var master = p == "static/"
-	var etag string
-	var ok bool
-	if master {
-
-		// Master record
-		etag = gEmbedStaticEtags["master.etag"]
-		
-	} else {
-
-		// Get ETag
-		etag, ok = gEmbedStaticEtags[p]
-		if !ok {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-	
+	// Get ETag
+	etag, ok := gEmbedStaticEtags[p]
+	if !ok {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
 	}
 	
 	// Check If-None-Match header
@@ -589,20 +571,12 @@ func staticHandler(w http.ResponseWriter, r *http.Request) {
 	//
 	var data []byte
 
-	if master {
-
-		data = []byte(gEmbedStaticEtags["master.json"])
-
-	} else {
-		
-		ext := filepath.Ext(p)
-		data, _ = gEmbedStatic.ReadFile(p)
-		if ext == ".svg" {
-			str := string(data)
-			str  = processSvg(str, r.URL.Query())
-			data = []byte(str)
-		}
-
+	ext := filepath.Ext(p)
+	data, _ = gEmbedStatic.ReadFile(p)
+	if ext == ".svg" {
+		str := string(data)
+		str  = processSvg(str, r.URL.Query())
+		data = []byte(str)
 	}
 	
     w.Header().Set("ETag", etag)
@@ -634,18 +608,5 @@ func populateEmbedEtags() {
             gEmbedStaticEtags[path] = etag
         }
     }
-
-	// Create a master json and etag
-	keys := make([]string, 0, len(gEmbedStaticEtags))
-	for key := range gEmbedStaticEtags {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	masterErag := getCRC32OfBytes([]byte(strings.Join(keys, ",")))
-	masterJson, err := json.Marshal(gEmbedStaticEtags)
-	must(err)
-
-	gEmbedStaticEtags["master.etag"] = masterErag
-	gEmbedStaticEtags["master.json"] = string(masterJson)
 
 }
