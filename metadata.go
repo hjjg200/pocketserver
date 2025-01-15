@@ -13,6 +13,8 @@ import (
 
 type Metadata struct {
 
+	mu sync.Mutex
+
 	ModTime  time.Time `json:"modTime"`
 	Size     int64     `json:"size"`
 	IsDir    bool      `json:"isDir"`
@@ -38,6 +40,8 @@ type metadataCache struct {
 	json			[]byte
 	dir				string
 	mod				time.Time
+
+	update			func()
 }
 
 type MetadataManager struct {
@@ -122,11 +126,15 @@ func (mgr *MetadataManager) AddDir(dir string) {
 		logFatal(fmt.Errorf("Directory already exists in cache: %s", dir))
 	}
 
+	// Create new cache
+
 	cache := &metadataCache{
-		mgr: mgr,
-		dir: dir,
-		body: make(MetadataMap),
+		mgr:	mgr,
+		dir:	dir,
+		body:	make(MetadataMap),
 	}
+
+	cache.update = throttleAtomic(cache._update, IO_EACH_CACHE_COOLDOWN)
 	mgr.cacheMap[dir] = cache
 
 	data, err := os.ReadFile(mgr.formatDirCacheName(dir))
@@ -142,13 +150,7 @@ func (mgr *MetadataManager) AddDir(dir string) {
 
 }
 
-func (cache *metadataCache) update() error {
-
-	// Cancel too frequent update
-	if time.Since(cache.mod) < IO_EACH_CACHE_COOLDOWN {
-		logDebug("too soon to update cache")
-		return nil
-	}
+func (cache *metadataCache) _update() {
 
 	dir := cache.dir
 
@@ -158,7 +160,8 @@ func (cache *metadataCache) update() error {
 	logInfo("Caching for", dir, "starting")
 	dentries, err := os.ReadDir(dir)
 	if err != nil {
-		return fmt.Errorf("Cannot read directory %s: %w", dir, err)
+		logError(fmt.Errorf("Cannot read directory %s: %w", dir, err))
+		return
 	}
 
 	// Create a copy of the current map
@@ -171,6 +174,11 @@ func (cache *metadataCache) update() error {
 		fullpath := filepath.Join(dir, dentry.Name())
 		base	 := dentry.Name()
 		ext 	 := filepath.Ext(base)
+		info, err := dentry.Info()
+		if err != nil {
+			logWarn("Failed to read info of", fullpath, err)
+			continue
+		}
 
 		if _, ok := mm0[base]; ok {
 
@@ -179,23 +187,14 @@ func (cache *metadataCache) update() error {
 		} else {
 
 			added++
-
-			// TODO: Cache and metadata updates for new file
-			info, err := dentry.Info()
-			if err != nil {
-				logWarn("Failed to read info of", fullpath, err)
-				continue
-			}
-			
-			meta 			 := &Metadata{}
-			meta.ModTime 	  = info.ModTime()
-			meta.Size		  = info.Size()
-			meta.IsDir		  = info.IsDir()
-			meta.MimeCategory = getMimeCategory(fullpath)
-
-			mm1[base] = meta
+			mm1[base] = &Metadata{}
 
 		}
+
+		mm1[base].ModTime		= info.ModTime()
+		mm1[base].Size			= info.Size()
+		mm1[base].IsDir			= info.IsDir()
+		mm1[base].MimeCategory	= getMimeCategory(fullpath)
 
 		// Check if it is eligible for details
 		if mm1[base].MimeCategory == MIME_AUDIO ||
@@ -226,8 +225,6 @@ func (cache *metadataCache) update() error {
 		cache.mod = time.Now()
 	}
 
-	return nil
-
 }
 
 func (mgr *MetadataManager) UpdateDir(dir string) error {
@@ -242,11 +239,7 @@ func (mgr *MetadataManager) UpdateDir(dir string) error {
 	}
 
 	 go func() {
-		err := cache.update()
-		if err != nil {
-			logError("Background cache update failed", dir, "err:", err)
-		}
-
+		cache.update()
 		mgr.mu.Unlock()
 	 }()
 
@@ -256,10 +249,20 @@ func (mgr *MetadataManager) UpdateDir(dir string) error {
 
 func (cache *metadataCache) ensureMetadataDetails(fullpath string, meta *Metadata) {
 
+	meta.mu.Lock()
+	defer meta.mu.Unlock()
+
+	if cache.checkMetadataDetails(fullpath, meta) == false {
+		cache.scheduleMetadataDetails(fullpath, meta)
+	}
+
+}
+
+func (cache *metadataCache) checkMetadataDetails(fullpath string, meta *Metadata) bool {
+
 	// Early exit
 	if meta.Details["duration"] == "" {
-		cache.scheduleMetadataDetails(fullpath, meta)
-		return
+		return false
 	}
 
 	metapath  := filepath.Join(gAppInfo.MetadataDir, fullpath)
@@ -270,29 +273,25 @@ func (cache *metadataCache) ensureMetadataDetails(fullpath string, meta *Metadat
 	txt, err := os.ReadFile(txtpath)
 	if err != nil {
 		logDebug(txtpath, err)
-		cache.scheduleMetadataDetails(fullpath, meta)
-		return
+		return false
 	}
 
 	err = json.Unmarshal(txt, &meta.Details)
 	if err != nil {
 		logDebug(txtpath, err)
-		cache.scheduleMetadataDetails(fullpath, meta)
-		return
+		return false
 	}
 
 	// If malformed metadata
 	if meta.Details["duration"] == "" {
-		cache.scheduleMetadataDetails(fullpath, meta)
-		return
+		return false
 	}
 
 	// Thumbnail
 	_, err = os.Stat(thumbpath)
 	if err != nil {
 		logDebug(txtpath, err)
-		cache.scheduleMetadataDetails(fullpath, meta)
-		return
+		return false
 	}
 
 	// Thumbnail for audio
@@ -300,10 +299,11 @@ func (cache *metadataCache) ensureMetadataDetails(fullpath string, meta *Metadat
 		_, err = os.Stat(smallpath)
 		if err != nil {
 			logDebug(smallpath, err)
-			cache.scheduleMetadataDetails(fullpath, meta)
-			return
+			return false
 		}
 	}
+
+	return true
 
 }
 
@@ -317,6 +317,14 @@ func (cache *metadataCache) scheduleMetadataDetails(fullpath string, meta *Metad
 
 		cache.mgr.bakeSem.Acquire()
 		defer cache.mgr.bakeSem.Release()
+
+		meta.mu.Lock()
+		defer meta.mu.Unlock()
+
+		if cache.checkMetadataDetails(fullpath, meta) {
+			logWarn("Another goroutine already baked metadata for", fullpath)
+			return
+		}
 
 		err := cache.mgr.bakeMetadataDetails(fullpath, meta)
 		if err != nil {
@@ -420,6 +428,7 @@ func (mgr *MetadataManager) bakeMetadataDetails(fullpath string, meta *Metadata)
 		cmd = fmt.Sprintf(cmd+FFMPEG_CMD_VIDEO_THUMB, fullpath, thumbpath)
 	}
 
+	logDebug(cmd)
 	out, err := executeFFmpeg(cmd)
 	if err != nil {
 		return fmt.Errorf("Failed to execute ffmpeg %s: %w", fullpath, err)

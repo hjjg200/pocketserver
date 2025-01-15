@@ -328,6 +328,11 @@ func validateCertificate(cert *x509.Certificate, addr string) error {
 }
 
 func throttleAtomic(fn func(), delay time.Duration) func() {
+	
+	if delay == 0 {
+		return fn
+	}
+
 	var lastCall atomic.Pointer[time.Time]
 
 	return func() {
