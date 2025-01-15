@@ -564,8 +564,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         (async () => {
             const url = buildURL(URL_LIST, {[QUERY_ALBUM]: album, [QUERY_CACHE]: null});
-            const response = await fetch(url);
-            const metaMap = await response.json();
+            const response    = await fetch(url);
+            const { metaMap } = await response.json();
 
             sub.textContent = formatAlbumInfo(metaMap);
 
@@ -652,8 +652,6 @@ document.addEventListener("DOMContentLoaded", () => {
         
         const src = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: gAlbum});
 
-        const index = gAudioNames.length;
-        gAudioNames.push(basename);
         // TODO gPlaylist.push(basename);
 
         const container = createElement("div", "music-container");
@@ -666,7 +664,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         artContainer.appendChild(art);
-        artContainer.addEventListener("click", changeMusic.bind(null, index));
+        artContainer.addEventListener("click", () => {
+            changeMusic(gPlaylist.indexOf(basename));
+        });
 
         const info = createElement("div", "music-info");
         const title = createElement("div", "title");
@@ -686,6 +686,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const listArtist = createElement("div", "artist");
         const right = createElement("div", "right");
 
+        li.setAttribute("data-base", basename);
+
         listTitle.textContent = basename;
         listArtist.textContent = '-';
 
@@ -697,7 +699,9 @@ document.addEventListener("DOMContentLoaded", () => {
         li.appendChild(left);
         li.appendChild(right);
 
-        li.addEventListener("click", changeMusic.bind(null, index));
+        li.addEventListener("click", () => {
+            changeMusic(gPlaylist.indexOf(basename));
+        });
         musicPlaylist.appendChild(li);
 
         //
@@ -754,9 +758,13 @@ document.addEventListener("DOMContentLoaded", () => {
         albumsList.classList.add("empty");
     }
 
-    window.updateList = function (metaMap1) {
+    window.updateList = function (metaBody1) {
 
+        const metaMap1 = metaBody1.metaMap;
         const metaMap0 = window.gMetadataMap;
+
+        window.gMetadataMap = metaMap1;
+        window.gPlaylist = metaBody1.playlist;
         
         const sortedKeys = Object.keys(metaMap1).sort((a, b) => {
             return new Date(metaMap1[b].modTime) - new Date(metaMap1[a].modTime);
@@ -860,7 +868,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 removed.remove();
         }
 
-        window.gMetadataMap = metaMap1;
+        // Playlist
+        for (const base of gPlaylist) {
+            const li = musicPlaylist.querySelector(`.music-playlist-li[data-base="${base}"]`);
+            musicPlaylist.appendChild(li);
+        }
 
     }
 
@@ -870,32 +882,32 @@ document.addEventListener("DOMContentLoaded", () => {
         const cacheUrl = buildURL(url, {[QUERY_CACHE]: null});
 
         const cachedResponse  = await fetch(cacheUrl);
-        const metaMap         = await cachedResponse.json();
+        const metaBody        = await cachedResponse.json();
 
         cleanupList();
 
-        updateList(metaMap);
+        updateList(metaBody);
 
         // TODO remove folder count from others
-        const numAudio = Object.values(metaMap).filter(v => v.mimeCategory === "audio").length;
+        const numAudio = Object.values(metaBody.metaMap).filter(v => v.mimeCategory === "audio").length;
         
-        totalSizeInfo.textContent = formatAlbumInfo(metaMap);
+        totalSizeInfo.textContent = formatAlbumInfo(metaBody.metaMap);
 
         // Adjust music player
         musicPlayerContainer.classList[(numAudio > 0) ? "remove":"add"]("no-songs");
 
         // DETAILS
-        const response = await fetch(url);
-        const metaMap2 = await response.json();
+        const response  = await fetch(url);
+        const metaBody2 = await response.json();
 
-        updateList(metaMap2);
+        updateList(metaBody2);
 
     }
 })();
 
 
 (() => {// Audio
-    window.gAudioNames = [];
+    window.gPlaylist = [];
     window.gAudioCurrentIndex = -1;
     let gAudioShuffle = false;
     let gAudioLoop = true;
@@ -904,7 +916,6 @@ document.addEventListener("DOMContentLoaded", () => {
         cleanupAudio();
     });
     window.cleanupAudio = function() {
-        gAudioNames = [];
         changeMusic(null);
     }
 
@@ -955,7 +966,7 @@ document.addEventListener("DOMContentLoaded", () => {
             updateMediaSessionPosition();
         },
         nexttrack: async () => {
-            const nextIndex = (gAudioCurrentIndex + 1) % gAudioNames.length;
+            const nextIndex = (gAudioCurrentIndex + 1) % gPlaylist.length;
             gAudioCurrentIndex = nextIndex;
             await changeMusic(nextIndex);
         },
@@ -964,7 +975,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 gAudio.currentTime = 0;
                 await mediaActionHandlers['play']();
             } else {
-                const prevIndex = (gAudioCurrentIndex - 1 + gAudioNames.length) % gAudioNames.length;
+                const prevIndex = (gAudioCurrentIndex - 1 + gPlaylist.length) % gPlaylist.length;
                 gAudioCurrentIndex = prevIndex;
                 await changeMusic(prevIndex);
             }
@@ -990,7 +1001,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         gAudioCurrentIndex = index;
-        const basename = gAudioNames[index];
+        const basename = gPlaylist[index];
         const src   = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: gAlbum});
         const thumb = buildURL(src, {[QUERY_THUMBNAIL]: null});
 
@@ -1254,6 +1265,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return closest; // Return the closest <div>
         }
 
+        let editPlaylistHandle;
         function handleDragEnd() {
 
             if (!draggedWrap) return;
@@ -1267,6 +1279,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
             //ensureLiVisibility(musicPlaylist, targetLi);
             targetLi.classList.remove("edit-target");
+
+            // Rearrange in gPlaylist
+            const currentBase = gAudioCurrentIndex !== -1 ? gPlaylist[gAudioCurrentIndex] : null;
+            window.gPlaylist = Array.from(
+                musicPlaylist.querySelectorAll(".music-playlist-li"))
+                .map(el => el.getAttribute("data-base"));
+
+            if (currentBase) gAudioCurrentIndex = gPlaylist.indexOf(currentBase);
+
+            // Send edit
+            clearTimeout(editPlaylistHandle);
+            editPlaylistHandle = setTimeout(() => {
+                        
+                const url = buildURL("/editPlaylist", {[QUERY_ALBUM]: gAlbum});
+
+                fetch(url, {
+                    method: 'POST',
+                    body: JSON.stringify(gPlaylist),
+                })
+                    .catch(error => console.error('Edit playlist error:', error));
+                
+            }, 5000);
 
         }
 

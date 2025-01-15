@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"bytes"
 	"hash/crc32"
+	"encoding/json"
 	"io"
 	"io/ioutil"
 	"log"
@@ -199,6 +200,46 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func editPlaylistHandler(w http.ResponseWriter, r *http.Request) {
+	
+	//
+	dir := filepath.Join(
+		gAppInfo.UploadDir,
+		filepath.Base(r.URL.Query().Get(QUERY_ALBUM)),
+	)
+
+	if r.Method != http.MethodPost {
+		logHTTPRequest(r, -1, "Invalid method")
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	// Read and parse the request body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		logHTTPRequest(r, -1, "Failed to read body", err)
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var pl1 = make([]string, 0)
+	if err := json.Unmarshal(body, &pl1); err != nil {
+		logHTTPRequest(r, -1, "Failed to parse json", err)
+		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		return
+	}
+
+	err = gMetadataManager.EditPlaylist(dir, pl1)
+	if err != nil {
+		logHTTPRequest(r, -1, "Failed to edit playlist", err)
+		http.Error(w, "Failed to edit playlist", http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(200)
+
+}
 
 func listHandler(w http.ResponseWriter, r *http.Request) {
 
@@ -579,6 +620,7 @@ func main() {
 	mux.HandleFunc("/view/", viewHandler)
 	mux.HandleFunc("/upload", uploadHandler)
 	mux.HandleFunc("/list", listHandler)
+	mux.HandleFunc("/editPlaylist", editPlaylistHandler)
 	mux.HandleFunc("/signout", signoutHandler)
 
 	//

@@ -12,28 +12,25 @@ import (
 )
 
 type Metadata struct {
-
 	mu sync.Mutex
 
-	ModTime  time.Time `json:"modTime"`
-	Size     int64     `json:"size"`
-	IsDir    bool      `json:"isDir"`
-
+	ModTime		time.Time `json:"modTime"`
+	Size		int64     `json:"size"`
+	IsDir		bool      `json:"isDir"`
 	MimeCategory string `json:"mimeCategory"`
 	
 	Details   map[string] string `json:"details"`
-
-	//Title    string `json:"title"`
-	//Album    string `json:"album"`
-	//Artist   string `json:"artist"`
-	//Duration string `json:"duration"`
 }
 type MetadataMap map[string]*Metadata
+type MetadataBody struct {
+	MetaMap		MetadataMap `json:"metaMap"`
+	Playlist	[]string `json:"playlist"`
+}
 
 type metadataCache struct {
 	mgr			*MetadataManager
 
-	body			MetadataMap
+	body			MetadataBody
 	bodyMu			sync.Mutex
 	detailsWg		sync.WaitGroup
 	changed			bool
@@ -79,9 +76,6 @@ func (mgr *MetadataManager) Get(dir string, cached bool) ([]byte, bool) {
 
 func (cache *metadataCache) updateJson() {
 
-	cache.bodyMu.Lock()
-	defer cache.bodyMu.Unlock()
-
 	data, err := json.Marshal(cache.body)
 	if err != nil {
 		panic(err)
@@ -105,6 +99,42 @@ func (cache *metadataCache) get(cached bool) ([]byte) {
 	defer cache.bodyMu.Unlock()
 
 	return cache.json
+
+}
+
+func (mgr *MetadataManager) EditPlaylist(dir string, pl1 []string) error {
+	
+	mgr.cacheMapMu.RLock()
+	defer mgr.cacheMapMu.RUnlock()
+
+	cache, ok := mgr.cacheMap[dir]
+	if !ok {
+		return fmt.Errorf("Dir not found")
+	}
+
+	return cache.editPlaylist(pl1)
+
+}
+
+func (cache *metadataCache) editPlaylist(pl1 []string) error {
+
+	cache.bodyMu.Lock()
+	defer cache.bodyMu.Unlock()
+
+	for _, base := range pl1 {
+		if meta, ok := cache.body.MetaMap[base]; !ok {
+			return fmt.Errorf("File doesn't exist", base)
+		} else {
+			if meta.MimeCategory != MIME_AUDIO {
+				return fmt.Errorf("Not an audio file", base)
+			}
+		}
+	}
+
+	cache.body.Playlist = pl1
+	cache.updateJson()
+
+	return nil
 
 }
 
@@ -132,10 +162,13 @@ func (mgr *MetadataManager) AddDir(dir string) {
 
 	// Create new cache
 
+	body := MetadataBody{}
+	body.MetaMap = make(MetadataMap)
+	body.Playlist = make([]string, 0)
 	cache := &metadataCache{
 		mgr:	mgr,
 		dir:	dir,
-		body:	make(MetadataMap),
+		body:	body,
 	}
 
 	cache.update = throttleAtomic(cache._update, IO_EACH_CACHE_COOLDOWN)
@@ -168,8 +201,11 @@ func (cache *metadataCache) _update() {
 		return
 	}
 
+	// Lock after ReadDir
+	cache.bodyMu.Lock()
+
 	// Create a copy of the current map
-	mm0 := cache.body
+	mm0 := cache.body.MetaMap
 	mm1 := make(MetadataMap, len(mm0))
 
 	// Detect additions and build the new map
@@ -228,10 +264,34 @@ func (cache *metadataCache) _update() {
 		}
 	}
 
-	// Swap the maps atomically
-	cache.bodyMu.Lock()
-	cache.body = mm1
-	cache.bodyMu.Unlock()
+	// PLAYLIST Check playlist
+	var count	= 0
+	var pl1		= make([]string, len(cache.body.Playlist))
+	var pl1keys = make(map[string]struct{})
+
+	// PLAYLSIT Handle removed
+	for i, base := range cache.body.Playlist {
+		if _, ok := mm1[base]; ok {
+			pl1[i] = base
+			pl1keys[base] = struct{}{}
+			count++
+		} else {
+			logDebug("REMOVE FROM PLAYLIST", dir, base)
+		}
+	}
+	pl1 = pl1[:count]
+
+	// PLAYLIST append added
+	for base := range mm1 {
+		if _, ok := pl1keys[base]; !ok && mm1[base].MimeCategory == MIME_AUDIO {
+			pl1 = append(pl1, base)
+			logDebug("ADD TO PLAYLIST", dir, base)
+		}
+	}
+
+	// 
+	cache.body.MetaMap = mm1
+	cache.body.Playlist = pl1
 
 	logInfo("Updated cache of", dir, "-", added, "added,", modified, "modified,", removed, "removed")
 
@@ -239,9 +299,13 @@ func (cache *metadataCache) _update() {
 		cache.updateJson()
 	}
 
+	cache.bodyMu.Unlock()
+
 	go func() {
 		cache.detailsWg.Wait()
+		cache.bodyMu.Lock()
 		cache.updateJson()
+		cache.bodyMu.Unlock()
 	}()
 
 }
