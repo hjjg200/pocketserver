@@ -12,7 +12,6 @@ import (
 )
 
 type Metadata struct {
-	mu sync.Mutex
 
 	ModTime  time.Time `json:"modTime"`
 	Size     int64     `json:"size"`
@@ -33,7 +32,6 @@ type metadataCache struct {
 	mgr			*MetadataManager
 
 	body			MetadataMap
-	mu				sync.RWMutex
 	detailsWg		sync.WaitGroup
 	changed			bool
 	changedDetails	bool
@@ -76,10 +74,22 @@ func (mgr *MetadataManager) Get(dir string, waitDetails bool) (data []byte, mod 
 
 }
 
+func (cache *metadataCache) updateJson() {
+
+	data, err := json.Marshal(cache.body)
+	if err != nil {
+		panic(err)
+	}
+	cache.json = data
+
+	err = os.WriteFile(cache.mgr.formatDirCacheName(cache.dir), data, 0644)
+	if err != nil {
+		logError("Failed to write cache file", cache.dir)
+	}
+
+}
+
 func (cache *metadataCache) get(waitDetails bool) ([]byte, time.Time) {
-	
-	cache.mu.RLock()
-	defer cache.mu.RUnlock()
 	
 	if waitDetails {
 		cache.detailsWg.Wait() // TODO fix race
@@ -87,20 +97,10 @@ func (cache *metadataCache) get(waitDetails bool) ([]byte, time.Time) {
 		if cache.changedDetails {
 			logDebug("details changed")
 			cache.changedDetails = false
-			cache.changed = true
+			
+			cache.updateJson()
+			cache.mod = time.Now()
 		}
-	}
-
-	if cache.changed == true {
-		logDebug("cache changed")
-		cache.changed = false
-
-		data, err := json.Marshal(cache.body)
-		if err != nil {
-			panic(err)
-		}
-		cache.json = data
-		cache.mod = time.Now()
 	}
 
 	return cache.json, cache.mod
@@ -122,18 +122,20 @@ func (mgr *MetadataManager) AddDir(dir string) {
 		logFatal(fmt.Errorf("Directory already exists in cache: %s", dir))
 	}
 
-	mgr.cacheMap[dir] = &metadataCache{
+	cache := &metadataCache{
 		mgr: mgr,
 		dir: dir,
 		body: make(MetadataMap),
 	}
+	mgr.cacheMap[dir] = cache
 
-	j, err := os.ReadFile(mgr.formatDirCacheName(dir))
+	data, err := os.ReadFile(mgr.formatDirCacheName(dir))
 	if err != nil {
 		return
 	}
 
-	err = json.Unmarshal(j, &mgr.cacheMap[dir].body)
+	cache.json = data
+	err = json.Unmarshal(data, &cache.body)
 	if err != nil {
 		logFatal("Failed to read cached data for", dir)
 	}
@@ -141,6 +143,12 @@ func (mgr *MetadataManager) AddDir(dir string) {
 }
 
 func (cache *metadataCache) update() error {
+
+	// Cancel too frequent update
+	if time.Since(cache.mod) < IO_EACH_CACHE_COOLDOWN {
+		logDebug("too soon to update cache")
+		return nil
+	}
 
 	dir := cache.dir
 
@@ -185,18 +193,19 @@ func (cache *metadataCache) update() error {
 			meta.IsDir		  = info.IsDir()
 			meta.MimeCategory = getMimeCategory(fullpath)
 
-			// Check if it is eligible for details
-			if meta.MimeCategory == MIME_AUDIO ||
-				meta.MimeCategory == MIME_VIDEO ||
-				ext == ".webp" {
-				
-				cache.populateMetadataDetails(fullpath, meta)
-
-			}
-
 			mm1[base] = meta
 
 		}
+
+		// Check if it is eligible for details
+		if mm1[base].MimeCategory == MIME_AUDIO ||
+			mm1[base].MimeCategory == MIME_VIDEO ||
+			ext == ".webp" {
+			
+			cache.ensureMetadataDetails(fullpath, mm1[base])
+
+		}
+
 	}
 
 	// Detect removals
@@ -213,7 +222,8 @@ func (cache *metadataCache) update() error {
 	logInfo("Updated cache of", dir, "-", added, "added", removed, "removed")
 
 	if added != 0 || removed != 0 {
-		cache.changed = true
+		cache.updateJson()
+		cache.mod = time.Now()
 	}
 
 	return nil
@@ -223,35 +233,34 @@ func (cache *metadataCache) update() error {
 func (mgr *MetadataManager) UpdateDir(dir string) error {
 
 	mgr.mu.Lock()
-	defer mgr.mu.Unlock()
 
 	cache, ok := mgr.cacheMap[dir]
 	if !ok {
+		mgr.mu.Unlock()
+
 		return fmt.Errorf("Not found")
 	}
 
-	err := cache.update()
-	if err != nil {
-		return err
-	}
+	 go func() {
+		err := cache.update()
+		if err != nil {
+			logError("Background cache update failed", dir, "err:", err)
+		}
 
-	j, err := json.Marshal(mgr.cacheMap[dir].body)
-	if err != nil {
-		return err
-	}
+		mgr.mu.Unlock()
+	 }()
 
-	return os.WriteFile(mgr.formatDirCacheName(dir), j, 0644)
+	 return nil
 
 }
 
+func (cache *metadataCache) ensureMetadataDetails(fullpath string, meta *Metadata) {
 
-func (cache *metadataCache) populateMetadataDetails(fullpath string, meta *Metadata) {
-	if cache.checkMetadataDetails(fullpath, meta) == false {
+	// Early exit
+	if meta.Details["duration"] == "" {
 		cache.scheduleMetadataDetails(fullpath, meta)
+		return
 	}
-}
-
-func (cache *metadataCache) checkMetadataDetails(fullpath string, meta *Metadata) bool {
 
 	metapath  := filepath.Join(gAppInfo.MetadataDir, fullpath)
 	txtpath   := metapath + META_EXT_TXT
@@ -261,25 +270,29 @@ func (cache *metadataCache) checkMetadataDetails(fullpath string, meta *Metadata
 	txt, err := os.ReadFile(txtpath)
 	if err != nil {
 		logDebug(txtpath, err)
-		return false
+		cache.scheduleMetadataDetails(fullpath, meta)
+		return
 	}
 
 	err = json.Unmarshal(txt, &meta.Details)
 	if err != nil {
 		logDebug(txtpath, err)
-		return false
+		cache.scheduleMetadataDetails(fullpath, meta)
+		return
 	}
 
 	// If malformed metadata
 	if meta.Details["duration"] == "" {
-		return false
+		cache.scheduleMetadataDetails(fullpath, meta)
+		return
 	}
 
 	// Thumbnail
 	_, err = os.Stat(thumbpath)
 	if err != nil {
 		logDebug(txtpath, err)
-		return false
+		cache.scheduleMetadataDetails(fullpath, meta)
+		return
 	}
 
 	// Thumbnail for audio
@@ -287,11 +300,10 @@ func (cache *metadataCache) checkMetadataDetails(fullpath string, meta *Metadata
 		_, err = os.Stat(smallpath)
 		if err != nil {
 			logDebug(smallpath, err)
-			return false
+			cache.scheduleMetadataDetails(fullpath, meta)
+			return
 		}
 	}
-
-	return true
 
 }
 
@@ -305,14 +317,6 @@ func (cache *metadataCache) scheduleMetadataDetails(fullpath string, meta *Metad
 
 		cache.mgr.bakeSem.Acquire()
 		defer cache.mgr.bakeSem.Release()
-
-		// Check if other goroutine did the task
-		meta.mu.Lock()
-		defer meta.mu.Unlock()
-		if cache.checkMetadataDetails(fullpath, meta) {
-			logDebug(fullpath, "another goroutine baked metadata")
-			return
-		}
 
 		err := cache.mgr.bakeMetadataDetails(fullpath, meta)
 		if err != nil {

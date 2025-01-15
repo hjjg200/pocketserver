@@ -26,6 +26,8 @@ A simple server built for use on iSH, an emulated linux on iOS.
 
 ## TODO
 
+- it appears that most crash come from too frequent handling of mounted icloud drive
+    - Ensure only one ReadDir call at a time
 - list time, list details time
 - graceful handling of mounted icloud drive
 - replay icon for retry; status timeout; graceful timeout; needs custom src handling for video, img, audio; default thumbnail and placeholder

@@ -207,7 +207,6 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Update
 	err := gMetadataManager.UpdateDir(dir)
-	logDebug("update dir", dir)
 	if err != nil {
 		logHTTPRequest(r, http.StatusBadRequest, "Invalid directory: ", dir)
 		http.Error(w, "Bad request", http.StatusBadRequest)
@@ -215,23 +214,21 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get cache
-	data, mod, ok := gMetadataManager.Get(dir, r.URL.Query().Has(QUERY_DETAILS))
+	data, _, ok := gMetadataManager.Get(dir, r.URL.Query().Has(QUERY_DETAILS))
 	if !ok {
 		logHTTPRequest(r, http.StatusNotFound, "Invalid directory: ", dir)
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
-	// TODO check if modified
-	if checkNotModified(r, mod) {
+	/*if checkNotModified(r, mod) {
 		w.WriteHeader(http.StatusNotModified)
 		return
-	}
-	logDebug("HEADERS", r.Header, "mod:", mod)
+	}*/
 
-	w.Header().Set("Cache-Control", "public, no-cache")
+	w.Header().Set("Cache-Control", "public, no-store")
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Last-Modified", mod.UTC().Format(http.TimeFormat))
+	//w.Header().Set("Last-Modified", mod.UTC().Format(http.TimeFormat)) // TODO put if modified in fetch
 	fmt.Fprint(w, string(data))
 
 }
