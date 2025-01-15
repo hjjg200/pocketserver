@@ -25,7 +25,7 @@ func executeFFmpeg(command string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		logDebug(err)
+		logDebug("FFmpeg error", err)
 		// FFmpeg returns an error code for certain operations, but metadata is still printed
 		if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() != 0 {
 			err = nil

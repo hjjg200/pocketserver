@@ -291,13 +291,11 @@ func (cache *metadataCache) checkMetadataDetails(fullpath string, meta *Metadata
 
 	txt, err := os.ReadFile(txtpath)
 	if err != nil {
-		logDebug(txtpath, err)
 		return false
 	}
 
 	err = json.Unmarshal(txt, &meta.Details)
 	if err != nil {
-		logDebug(txtpath, err)
 		return false
 	}
 
@@ -309,7 +307,6 @@ func (cache *metadataCache) checkMetadataDetails(fullpath string, meta *Metadata
 	// Thumbnail
 	_, err = os.Stat(thumbpath)
 	if err != nil {
-		logDebug(txtpath, err)
 		return false
 	}
 
@@ -317,7 +314,6 @@ func (cache *metadataCache) checkMetadataDetails(fullpath string, meta *Metadata
 	if meta.MimeCategory == "audio" {
 		_, err = os.Stat(smallpath)
 		if err != nil {
-			logDebug(smallpath, err)
 			return false
 		}
 	}

@@ -35,6 +35,7 @@ const ROOT_KEY_PEM = "root_key.pem"
 const AUTH_JSON = "auth.json"
 
 const CONTEXT_KEY_REQUEST_ID = 0
+const CONTEXT_KEY_REQUEST_START = 1
 const QUERY_ALBUM = "album"
 const QUERY_THUMBNAIL = "thumbnail"
 const QUERY_DETAILS = "details"
@@ -66,14 +67,14 @@ var gMetadataManager *MetadataManager
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodPost {
-		logHTTPRequest(r, http.StatusMethodNotAllowed, "Invalid method for upload")
+		logHTTPRequest(r, -1, "Invalid method for upload")
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
 
 	mr, err := r.MultipartReader()
 	if err != nil {
-		logHTTPRequest(r, http.StatusBadRequest, "r.MultipartReader err:", err)
+		logHTTPRequest(r, -1, "r.MultipartReader err:", err)
 		http.Error(w, "Cannot create multipart reader", http.StatusBadRequest)
 		return
 	}
@@ -92,7 +93,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err != nil {
-			logHTTPRequest(r, http.StatusBadRequest, "mr.NextPart err:", err)
+			logHTTPRequest(r, -1, "mr.NextPart err:", err)
 			http.Error(w, "Error reading part", http.StatusBadRequest)
 			return
 		}
@@ -103,7 +104,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		
 			p, err := ioutil.ReadAll(part)
 			if err != nil {
-				logHTTPRequest(r, http.StatusBadRequest, "ioutil.ReadAll err:", err)
+				logHTTPRequest(r, -1, "ioutil.ReadAll err:", err)
 				http.Error(w, "Error reading part", http.StatusBadRequest)
 				return
 			}
@@ -112,7 +113,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		} else if part.FormName() == "file" {
 
 			if fileCount > 0 {
-				logHTTPRequest(r, http.StatusBadRequest, "Too many files")
+				logHTTPRequest(r, -1, "Too many files")
 				http.Error(w, "Too many files", http.StatusBadRequest)
 				return
 			}
@@ -137,7 +138,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			hasher := crc32.NewIEEE()
 			out, err := os.Create(fullpathUndone)
 			if err != nil {
-				logHTTPRequest(r, http.StatusInternalServerError, fullpathUndone, "os.Create err:", err)
+				logHTTPRequest(r, -1, fullpathUndone, "os.Create err:", err)
 				http.Error(w, "Error creating file", http.StatusInternalServerError)
 				return
 			}
@@ -148,7 +149,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 				bytesRead, err := part.Read(buffer)
 				if err != nil && err != io.EOF {
-					logHTTPRequest(r, http.StatusInternalServerError, fullpathUndone, "part.Read err:", err)
+					logHTTPRequest(r, -1, fullpathUndone, "part.Read err:", err)
 					http.Error(w, "Error reading from part", http.StatusInternalServerError)
 					out.Close()
 					return
@@ -161,7 +162,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 				// Update the hasher with the chunk
 				_, err = out.Write(buffer[:bytesRead])
 				if err != nil {
-					logHTTPRequest(r, http.StatusInternalServerError, fullpathUndone, "out.Write err:", err)
+					logHTTPRequest(r, -1, fullpathUndone, "out.Write err:", err)
 					http.Error(w, "Error writing to server", http.StatusInternalServerError)
 					out.Close()
 					return
@@ -181,7 +182,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Check hash
 	if hashHex0 != hashHex1 {
-		logHTTPRequest(r, http.StatusInternalServerError, fullpathUndone, "hashHex mismatch", hashHex0, hashHex1)
+		logHTTPRequest(r, -1, fullpathUndone, "hashHex mismatch", hashHex0, hashHex1)
 		http.Error(w, "Hash doesn't match", http.StatusInternalServerError)
 		return
 	}
@@ -189,7 +190,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	// Finalize
 	err = os.Rename(fullpathUndone, fullpath)
 	if err != nil {
-		logHTTPRequest(r, http.StatusInternalServerError, fullpathUndone, "os.Rename err:", err)
+		logHTTPRequest(r, -1, fullpathUndone, "os.Rename err:", err)
 		http.Error(w, "Error changing name", http.StatusInternalServerError)
 		return
 	}
@@ -215,7 +216,7 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 		// Update
 		err := gMetadataManager.UpdateDir(dir)
 		if err != nil {
-			logHTTPRequest(r, http.StatusBadRequest, "Invalid directory: ", dir)
+			logHTTPRequest(r, -1, "Invalid directory: ", dir)
 			http.Error(w, "Bad request", http.StatusBadRequest)
 			return
 		}
@@ -225,7 +226,7 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	// Get cache
 	data, ok := gMetadataManager.Get(dir, cached)
 	if !ok {
-		logHTTPRequest(r, http.StatusNotFound, "Invalid directory: ", dir)
+		logHTTPRequest(r, -1, "Invalid directory: ", dir)
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
@@ -252,11 +253,9 @@ func checkNotModified(r *http.Request, mod time.Time) bool {
 
 		parsedTime, err := http.ParseTime(ifModifiedSince)
 		if err != nil {
-			logDebug("Parse fail", parsedTime, "err:", err)
 			return false
 		}
 
-		logDebug(mod.Sub(parsedTime), "MODTIME", mod, parsedTime)
 		if mod.Equal(parsedTime) {
 			return true
 		}
@@ -321,11 +320,11 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		// Open the file
 		file, err := os.Open(fullpath)
 		if os.IsNotExist(err) {
-			logHTTPRequest(r, http.StatusNotFound, "view Not Found", fullpath)
+			logHTTPRequest(r, -1, "view Not Found", fullpath)
 			http.Error(w, "File not found", http.StatusNotFound)
 			return
 		} else if err != nil {
-			logHTTPRequest(r, http.StatusInternalServerError, "view os.Open", fullpath,  err)
+			logHTTPRequest(r, -1, "view os.Open", fullpath,  err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -334,7 +333,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		// Get file info to retrieve the modification time
 		info, err := file.Stat()
 		if err != nil {
-			logHTTPRequest(r, http.StatusInternalServerError, "view file.Stat", fullpath, err)
+			logHTTPRequest(r, -1, "view file.Stat", fullpath, err)
 			http.Error(w, "Error retrieving file info", http.StatusInternalServerError)
 			return
 		}
@@ -361,8 +360,8 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 
 type responseWriter struct {
 	http.ResponseWriter
-	r *http.Request
-	code int
+	r		*http.Request
+	code	int
 }
 
 func (w *responseWriter) Write(p []byte) (int, error) {
@@ -375,6 +374,7 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 func (w *responseWriter) WriteHeader(code int) {
 	w.code = code
 	w.ResponseWriter.WriteHeader(code)
+
 	logHTTPRequest(w.r, code)
 }
 
@@ -446,6 +446,7 @@ func performanceMiddlewareFactory(config PerformanceConfig) func(http.Handler) h
 			// Add the request ID to the context
 			rID 	:= fmt.Sprintf("%d", performance.RequestCount.Add(1))
 			ctx 	:= context.WithValue(r.Context(), CONTEXT_KEY_REQUEST_ID, rID)
+			ctx		 = context.WithValue(ctx, CONTEXT_KEY_REQUEST_START, start)
 			r 		 = r.WithContext(ctx)
 			w 		:= &responseWriter{ResponseWriter: w0, r: r}
 			
@@ -454,7 +455,7 @@ func performanceMiddlewareFactory(config PerformanceConfig) func(http.Handler) h
 			// Semaphore for limited environment
 			ok := sem.Acquire()
 			if !ok {
-				logHTTPRequest(r, http.StatusServiceUnavailable, "TIMEOUT")
+				logHTTPRequest(r, -1, "TIMEOUT")
 				http.Error(w, "Timeout", http.StatusServiceUnavailable)
 				return
 			}

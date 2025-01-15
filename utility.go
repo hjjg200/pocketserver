@@ -118,7 +118,6 @@ func generateSelfSignedCert(root *rootCACertificate, certPath, keyPath, addr str
 
 	var certDER []byte
 	// If this is root cert
-	logDebug(root)
 	if root == nil {
 
 		template.KeyUsage 		= x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign

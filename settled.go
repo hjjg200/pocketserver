@@ -30,7 +30,6 @@ var gAppInfo AppInfo
 
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {
-	logDebug("HEADERS", r.Header)
 	fmt.Fprint(w, "imageserverpong")
 }
 
@@ -45,7 +44,6 @@ func serveJson(w http.ResponseWriter, r *http.Request, data interface{}) {
 
 	// Print the JSON data
 	w.Header().Set("Content-Type", "application/json")
-	logHTTPRequest(r, 200)
 	fmt.Fprint(w, string(jsonData))
 
 }
@@ -108,6 +106,12 @@ func logHTTPRequest(r *http.Request, status int, items ...interface{}) {
 	if id, ok := r.Context().Value(CONTEXT_KEY_REQUEST_ID).(string); ok {
 		rID = "#" + id
 	}
+
+	//
+	elapsed := time.Duration(0)
+	if start, ok := r.Context().Value(CONTEXT_KEY_REQUEST_START).(time.Time); ok {
+		elapsed = time.Since(start)
+	}
 	
 	protocol := "HTTP "
 	if r.TLS != nil {
@@ -136,8 +140,8 @@ func logHTTPRequest(r *http.Request, status int, items ...interface{}) {
 
 	// Log in the desired format
 	logLine := fmt.Sprintf(
-		"%s %s %s %s %s <-%s%s",
-		rID, protocol, method, statusStr, url, raddr, tail,
+		"%s %s %s %s (%v) %s <-%s%s",
+		rID, protocol, method, statusStr, elapsed, url, raddr, tail,
 	)
 	logTimestamp(logLine, items...)
 
@@ -562,7 +566,6 @@ func staticHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	// Check If-None-Match header
-	logDebug("ETAG", r.Header.Get("If-None-Match"), "server", etag)
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return
