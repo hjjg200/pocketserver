@@ -26,12 +26,13 @@ A simple server built for use on iSH, an emulated linux on iOS.
 
 ## TODO
 
-- replay icon for retry; status timeout; graceful timeout; needs custom src handling for video, img, audio; default thumbnail and placeholder
-- Create album
-- paste to upload for iOS safari
-- fix when playing stops after uploading
 - playlist shuffle and loop single song
     - playlist edit
+- replay icon for retry; status timeout; graceful timeout; needs custom src handling for video, img, audio; default thumbnail and placeholder
+- Create album, rename album
+- remove metadata of removed files
+- paste to upload for iOS safari
+- fix when playing stops after uploading
 - ipv6
 
 ### Memo

@@ -271,22 +271,36 @@
     list-style: none;
     max-height: 24rem;
 }
-.music-playlist li {
+.music-playlist.edit {
+    overflow-y: visible;
+    max-height: none;
+}
+.music-playlist-li {
     padding: .6rem 1rem;
     border-bottom: 1px dashed #ddd;
+    background-color: #fff0;
     display: flex;
     align-items: center;
     justify-content: space-between;
     line-height: 1.25;
+    user-select: none;
+    transition: background-color 2s ease;
 }
-.music-playlist .left {
+.music-playlist-li.dragged {
+    box-shadow: 0 .2rem .4rem #aaa3;
+}
+.music-playlist-li.edit-target {
+    color: #aaa;
+    background-color: #f5f5f5;
+}
+.music-playlist-li .left {
     padding-right: 1rem;
     display: flex;
 }
-.music-playlist li .info {
+.music-playlist-li .info {
     flex: 1;
 }
-.music-playlist li .before {
+.music-playlist-li .before {
     width: 1.5rem;
     background: url(/static/play.svg);
     background-repeat: no-repeat;
@@ -294,14 +308,14 @@
     background-position-x: -.8rem;
     background-size: 2rem;
 }
-.music-playlist li:not(.playing) .before {
+.music-playlist-li:not(.playing) .before {
     display: none;
 }
-.music-playlist .artist {
+.music-playlist-li .artist {
     color: #aaa;
     font-size: 0.9rem;
 }
-.music-playlist .right {
+.music-playlist-li .right {
     color: #999;
 }
 
@@ -664,7 +678,7 @@ document.addEventListener("DOMContentLoaded", () => {
         container.appendChild(info);
 
         // Playlist
-        const li = createElement("li");
+        const li = createElement("li", "music-playlist-li");
         const left = createElement("div", "left");
         const leftBefore = createElement("div", "before");
         const leftInfo = createElement("div", "info");
@@ -804,7 +818,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         body.remove();
                         wrapRemove();
                     };
-                    
+
                     window.gEntryMap[basename] = wrap;
 
                 } else if (meta.isDir) {
@@ -1127,6 +1141,196 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
     }
+
+    // Playlist editing
+    {
+        let targetLi;
+        let draggedWrap;
+        let dragPoint;
+        let candidateLi;
+
+        // Function to handle the long press event
+        let longpressHandle;
+        let longpressStart;
+        const longpressDuration = 750;
+        function handleLongPress(event) {
+
+            musicPlaylist.querySelectorAll(".edit-target").forEach(el => el.classList.remove("edit-target"));
+
+            targetLi = event.target.closest('.music-playlist-li');
+            if (targetLi) {
+
+                const rect = targetLi.getBoundingClientRect();
+
+                dragPoint = {};
+                dragPoint.x = event.clientX - rect.left;
+                dragPoint.y = event.clientY - rect.top;
+
+                // Add scroll y to compensate
+                window.scrollTo({ top: window.scrollY+musicPlaylist.scrollTop });
+                musicPlaylist.classList.add("edit");
+
+                //
+                targetLi.classList.add("edit-target");
+
+                if (draggedWrap) draggedWrap.remove();
+
+                const draggedLi = createElement("li", "music-playlist-li", "dragged");
+                draggedLi.innerHTML = targetLi.innerHTML;
+
+                draggedWrap = createElement("div");
+                draggedWrap.style.position = "absolute";
+                draggedWrap.style.zIndex = "1000";
+                draggedWrap.style.background = "#fff";
+                draggedWrap.style.width = `${rect.width}px`;
+
+                draggedWrap.appendChild(draggedLi);
+                document.body.appendChild(draggedWrap);
+
+                handleDragMove(event);
+            }
+        }
+
+        function handleDragMove(event, touch) {
+
+            if (!draggedWrap) return;
+
+            event.preventDefault(); // Prevent scrolling during drag
+
+            draggedWrap.style.left = `${event.clientX - dragPoint.x + window.scrollX}px`;
+            draggedWrap.style.top = `${event.clientY - dragPoint.y + window.scrollY + 5}px`;
+
+            candidateLi = getClosestLi(event.clientY);
+
+            //
+            let targetNextLi = null;
+            let i = targetLi.nextElementSibling;
+            while (i) {
+                if (i.classList.contains('music-playlist-li')) {
+                    targetNextLi = i;
+                    break; // Found the next element of the desired type
+                }
+                i = i.nextElementSibling; // Move to the next sibling
+            }
+
+            if (candidateLi !== targetLi && candidateLi !== targetNextLi) {
+                musicPlaylist.insertBefore(targetLi, candidateLi);
+            }
+
+            //
+            if (touch) {
+                const margin = 120;
+                const scrollStep = 45;
+                // Scroll up when near the top
+                if (event.clientY < margin) {
+                    window.scrollBy({ top: -scrollStep, behavior: 'smooth' });
+                }
+                // Scroll down when near the bottom
+                else if (event.clientY > window.innerHeight - margin) {
+                    window.scrollBy({ top: scrollStep, behavior: 'smooth' });
+                }
+            }
+
+        }
+
+        function getClosestLi(clientY) {
+            const items = musicPlaylist.querySelectorAll('.music-playlist-li'); // Get all items in the container
+            let closest = null;
+            let minDistance = Infinity;
+
+            items.forEach((item) => {
+                const rect = item.getBoundingClientRect();
+                const itemCenterY = rect.top; // Only top for using insertBefore
+
+                // Calculate the distance from the drag position to the item's center
+                const distance = Math.abs(itemCenterY - clientY);
+
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closest = item;
+                }
+            });
+
+            return closest; // Return the closest <div>
+        }
+
+        function handleDragEnd() {
+
+            if (!draggedWrap) return;
+            if (!candidateLi) return;
+
+            //musicPlaylist.classList.remove("edit");
+            draggedWrap.remove();
+            draggedWrap = null;
+
+            musicPlaylist.insertBefore(targetLi, candidateLi);
+
+            //ensureLiVisibility(musicPlaylist, targetLi);
+            targetLi.classList.remove("edit-target");
+
+        }
+
+        // Event listeners for mouse and touch
+        /* musicPlaylist.addEventListener('mousedown', (event) => {
+            longpressHandle = setTimeout(() => handleLongPress(event), longpressDuration);
+        });
+
+        document.addEventListener('mouseleave', () => clearTimeout(longpressHandle));
+        document.addEventListener('mousemove', throttle(50, handleDragMove));
+
+        document.addEventListener('mouseup', () => {
+            clearTimeout(longpressHandle);
+            handleDragEnd();
+        });*/
+
+        let touching = false;
+        musicPlaylist.addEventListener('touchstart', (event) => {
+            touching = true;
+
+            if (musicPlaylist.clientHeight < musicPlaylist.scrollHeight)
+                event.preventDefault(); // Prevent default long-press behavior
+        });
+        musicPlaylist.addEventListener('pointerdown', (event) => {
+            longpressStart = {
+                clientX: event.clientX,
+                clientY: event.clientY
+            };
+            longpressHandle = setTimeout(() => handleLongPress(event), longpressDuration);
+        });
+
+        let touchmoveLastY;
+        const touchend = () => {
+            touching = false;
+            touchmoveLastY = null;
+            clearTimeout(longpressHandle);
+            handleDragEnd();
+        };
+        let touchmove = throttle(10, (event) => {
+
+            // Manual handling of scroll
+            if (touching && touchmoveLastY) {
+                const delta = touchmoveLastY-event.clientY;
+                musicPlaylist.scrollTo({ top: musicPlaylist.scrollTop + delta });
+            }
+
+            touchmoveLastY = event.clientY;
+
+            if (longpressStart) {
+                if (Math.abs(longpressStart.clientX - event.clientX) > 5 ||
+                    Math.abs(longpressStart.clientY - event.clientY) > 5) {
+                    clearTimeout(longpressHandle);
+                }
+            }
+
+            handleDragMove(event, touching);
+
+        });
+        document.addEventListener('pointermove', touchmove);
+        document.addEventListener('pointerup', touchend);
+        document.addEventListener('pointercancel', touchend);
+
+    }
+    
 })();
 
 
@@ -1257,7 +1461,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     // Handle error
                     reject(new Error(xhr.status + ": " + xhr.response));
                 }
-                checkMemstats();
+                checkServer();
             };
 
             // On error
