@@ -34,12 +34,12 @@ type metadataCache struct {
 	mgr			*MetadataManager
 
 	body			MetadataMap
+	bodyMu			sync.Mutex
 	detailsWg		sync.WaitGroup
 	changed			bool
 	changedDetails	bool
 	json			[]byte
 	dir				string
-	mod				time.Time
 
 	update			func()
 }
@@ -47,7 +47,8 @@ type metadataCache struct {
 type MetadataManager struct {
 	bakeSem		*Semaphore
 	cacheMap	map[string]*metadataCache
-	mu			sync.RWMutex
+	cacheMapMu	sync.RWMutex // cache registration
+	updateMu	sync.Mutex // only one update at a time
 }
 
 
@@ -62,23 +63,24 @@ func NewMetadataManager() *MetadataManager {
 
 }
 
-func (mgr *MetadataManager) Get(dir string, waitDetails bool) (data []byte, mod time.Time, ok bool) {
+func (mgr *MetadataManager) Get(dir string, cached bool) ([]byte, bool) {
 
-	mgr.mu.RLock()
-	defer mgr.mu.RUnlock()
+	mgr.cacheMapMu.RLock()
+	defer mgr.cacheMapMu.RUnlock()
 
 	cache, ok := mgr.cacheMap[dir]
 	if !ok {
-		return
+		return nil, false
 	}
 
-	data, mod = cache.get(waitDetails)
-	ok = true
-	return
+	return cache.get(cached), true
 
 }
 
 func (cache *metadataCache) updateJson() {
+
+	cache.bodyMu.Lock()
+	defer cache.bodyMu.Unlock()
 
 	data, err := json.Marshal(cache.body)
 	if err != nil {
@@ -93,34 +95,36 @@ func (cache *metadataCache) updateJson() {
 
 }
 
-func (cache *metadataCache) get(waitDetails bool) ([]byte, time.Time) {
+func (cache *metadataCache) get(cached bool) ([]byte) {
 	
-	if waitDetails {
-		cache.detailsWg.Wait() // TODO fix race
-
-		if cache.changedDetails {
-			logDebug("details changed")
-			cache.changedDetails = false
-			
-			cache.updateJson()
-			cache.mod = time.Now()
-		}
+	if cached == false {
+		cache.detailsWg.Wait()
 	}
 
-	return cache.json, cache.mod
+	cache.bodyMu.Lock()
+	defer cache.bodyMu.Unlock()
+
+	return cache.json
 
 }
 
+func (mgr *MetadataManager) parseDirCacheName(formatted string) string {
+	splits := strings.Split(formatted, META_SLASH_IN_FILENAME)
+	dir := filepath.Join(splits...)
+	logDebug(formatted, dir)
+	return dir
+}
+
 func (mgr *MetadataManager) formatDirCacheName(dir string) string {
-	dir = strings.ReplaceAll(dir, "/", "")
-	dir = strings.ReplaceAll(dir, "\\", "")
+	dir = strings.ReplaceAll(dir, "/", META_SLASH_IN_FILENAME)
+	dir = strings.ReplaceAll(dir, "\\", META_SLASH_IN_FILENAME)
 	return filepath.Join(gAppInfo.MetadataDir, dir) + ".json"
 }
 
 func (mgr *MetadataManager) AddDir(dir string) {
 
-	mgr.mu.Lock()
-	defer mgr.mu.Unlock()
+	mgr.cacheMapMu.Lock()
+	defer mgr.cacheMapMu.Unlock()
 
 	if _, ok := mgr.cacheMap[dir]; ok {
 		logFatal(fmt.Errorf("Directory already exists in cache: %s", dir))
@@ -154,7 +158,7 @@ func (cache *metadataCache) _update() {
 
 	dir := cache.dir
 
-	var added, removed int
+	var added, modified, removed int
 
 	// Check if changed
 	logInfo("Caching for", dir, "starting")
@@ -171,10 +175,10 @@ func (cache *metadataCache) _update() {
 	// Detect additions and build the new map
 	for _, dentry := range dentries {
 
-		fullpath := filepath.Join(dir, dentry.Name())
-		base	 := dentry.Name()
-		ext 	 := filepath.Ext(base)
-		info, err := dentry.Info()
+		fullpath	:= filepath.Join(dir, dentry.Name())
+		base		:= dentry.Name()
+		ext			:= filepath.Ext(base)
+		info, err	:= dentry.Info()
 		if err != nil {
 			logWarn("Failed to read info of", fullpath, err)
 			continue
@@ -182,12 +186,15 @@ func (cache *metadataCache) _update() {
 
 		if _, ok := mm0[base]; ok {
 
+			if info.ModTime().Equal(mm0[base].ModTime) == false {
+				modified++
+			}
 			mm1[base] = mm0[base]
 
 		} else {
 
-			added++
 			mm1[base] = &Metadata{}
+			added++
 
 		}
 
@@ -201,7 +208,13 @@ func (cache *metadataCache) _update() {
 			mm1[base].MimeCategory == MIME_VIDEO ||
 			ext == ".webp" {
 			
-			cache.ensureMetadataDetails(fullpath, mm1[base])
+			if mm1[base].Details != nil {
+				if d, ok := mm1[base].Details["duration"]; ok && d == "" {
+					cache.ensureMetadataDetails(fullpath, mm1[base])
+				}
+			} else {
+				cache.ensureMetadataDetails(fullpath, mm1[base])
+			}
 
 		}
 
@@ -216,31 +229,37 @@ func (cache *metadataCache) _update() {
 	}
 
 	// Swap the maps atomically
+	cache.bodyMu.Lock()
 	cache.body = mm1
+	cache.bodyMu.Unlock()
 
-	logInfo("Updated cache of", dir, "-", added, "added", removed, "removed")
+	logInfo("Updated cache of", dir, "-", added, "added,", modified, "modified,", removed, "removed")
 
-	if added != 0 || removed != 0 {
+	if added != 0 || modified != 0 || removed != 0 {
 		cache.updateJson()
-		cache.mod = time.Now()
 	}
+
+	go func() {
+		cache.detailsWg.Wait()
+		cache.updateJson()
+	}()
 
 }
 
 func (mgr *MetadataManager) UpdateDir(dir string) error {
 
-	mgr.mu.Lock()
+	mgr.cacheMapMu.RLock()
+	defer mgr.cacheMapMu.RUnlock()
 
 	cache, ok := mgr.cacheMap[dir]
 	if !ok {
-		mgr.mu.Unlock()
-
 		return fmt.Errorf("Not found")
 	}
 
 	 go func() {
+		mgr.updateMu.Lock()
 		cache.update()
-		mgr.mu.Unlock()
+		mgr.updateMu.Unlock()
 	 }()
 
 	 return nil
@@ -249,21 +268,21 @@ func (mgr *MetadataManager) UpdateDir(dir string) error {
 
 func (cache *metadataCache) ensureMetadataDetails(fullpath string, meta *Metadata) {
 
+	cache.detailsWg.Add(1)
+
 	meta.mu.Lock()
 	defer meta.mu.Unlock()
 
 	if cache.checkMetadataDetails(fullpath, meta) == false {
 		cache.scheduleMetadataDetails(fullpath, meta)
+		return
 	}
+
+	cache.detailsWg.Done()
 
 }
 
 func (cache *metadataCache) checkMetadataDetails(fullpath string, meta *Metadata) bool {
-
-	// Early exit
-	if meta.Details["duration"] == "" {
-		return false
-	}
 
 	metapath  := filepath.Join(gAppInfo.MetadataDir, fullpath)
 	txtpath   := metapath + META_EXT_TXT
@@ -309,8 +328,6 @@ func (cache *metadataCache) checkMetadataDetails(fullpath string, meta *Metadata
 
 func (cache *metadataCache) scheduleMetadataDetails(fullpath string, meta *Metadata) {
 
-	cache.detailsWg.Add(1)
-
 	go func() {
 
 		defer cache.detailsWg.Done()
@@ -330,8 +347,6 @@ func (cache *metadataCache) scheduleMetadataDetails(fullpath string, meta *Metad
 		if err != nil {
 			logWarn("Failed to bake metadata details", fullpath, err)
 		}
-
-		cache.changedDetails = true
 
 	}()
 

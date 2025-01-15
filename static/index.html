@@ -390,39 +390,10 @@ input#cache-album {
             </div>
 
             <div class="albums-list">
-                <!--<div class="album-container">
-                    <div class="album-thumbnail">
-
-                    </div>
-                    <div class="album-info">
-                        <div class="name">
-                            Album 1
-                        </div>
-                        <div class="sub">
-                            30 music
-                        </div>
-                    </div>
-                </div>
-
-                <div class="album-container">
-                    <div class="album-thumbnail">
-
-                    </div>
-                    <div class="album-info">
-                        <div class="name">
-                            Album 2
-                        </div>
-                        <div class="sub">
-                            30 music
-                        </div>
-                    </div>
-                </div>-->
-
                 <div class="album-create">
                     <img src="/static/plus.svg?f=%23aaa" alt="">
                     <div>Create Album</div>
-                </div>
-            </div>
+                </div></div>
 
             <div class="music-player-container no-songs">
                 <div class="music-player">
@@ -491,6 +462,7 @@ const DEFAULT_ARTWORK = "/static/default_artwork.jpg";
 const QUERY_ALBUM = "album";
 const QUERY_THUMBNAIL = "thumbnail";
 const QUERY_DETAILS = "details";
+const QUERY_CACHE = "cache";
 const URL_VIEW = "/view";
 const URL_LIST = "/list";
 
@@ -546,7 +518,7 @@ document.addEventListener("DOMContentLoaded", () => {
         changeAlbum(getQueryParam(QUERY_ALBUM));
     });
 
-    function addAlbum(album) {
+    function createAlbum(album) {
         
         if(albumsList.classList.contains("empty"))
             albumsList.classList.remove("empty");
@@ -569,15 +541,16 @@ document.addEventListener("DOMContentLoaded", () => {
         container.appendChild(thumbnail);
         container.appendChild(info);
 
-        albumsList.insertBefore(container, albumsList.firstChild);
-
         container.addEventListener("click", () => {
             changeAlbum(album);
         });
 
+        container.update = () => {};
+        //container.remove
+
         (async () => {
-            const url = buildURL(URL_LIST, {[QUERY_ALBUM]: album});
-            const response = await fetch(url, {cache: "no-cache"});
+            const url = buildURL(URL_LIST, {[QUERY_ALBUM]: album, [QUERY_CACHE]: null});
+            const response = await fetch(url);
             const metaMap = await response.json();
 
             sub.textContent = formatAlbumInfo(metaMap);
@@ -608,6 +581,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         })();
     
+        return container;
+
     }
     function createVideo(basename) {
 
@@ -625,14 +600,18 @@ document.addEventListener("DOMContentLoaded", () => {
             );
         });
 
+        let video;
         thumbnail.addEventListener("click", () => {
-            const video = createElement("video", "media-body");
+            video = createElement("video", "media-body");
             video.setAttribute("src", src); //+ "#t=0.001"); // #t=0.001 for safari thumbnail load hack
             video.setAttribute("controls", "");
             video.play();
             
             thumbnail.parentNode.insertBefore(video, thumbnail);
         });
+
+        thumbnail.update = () => {};
+        //thumbnail.remove
 
         return thumbnail;
 
@@ -648,6 +627,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 {[QUERY_ALBUM]: gAlbum}
             ));
         });
+
+        image.update = () => {};
+        //image.remove
 
         return image;
         
@@ -670,6 +652,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         artContainer.appendChild(art);
+        artContainer.addEventListener("click", changeMusic.bind(null, index));
 
         const info = createElement("div", "music-info");
         const title = createElement("div", "title");
@@ -697,8 +680,15 @@ document.addEventListener("DOMContentLoaded", () => {
         left.appendChild(leftBefore);
         left.appendChild(leftInfo);
 
-        container.populateDetails = () => {
-            const details = gMetadataMap[basename].details;
+        li.appendChild(left);
+        li.appendChild(right);
+
+        li.addEventListener("click", changeMusic.bind(null, index));
+        musicPlaylist.appendChild(li);
+
+        //
+        container.update = (meta) => {
+            const details = meta.details;
 
             details.title = details.title || basename;
             details.artist = details.artist || "-";
@@ -709,15 +699,11 @@ document.addEventListener("DOMContentLoaded", () => {
             artist.textContent = details.artist;
             right.textContent = formatDuration(details.duration);
         };
-
-        li.appendChild(left);
-        li.appendChild(right);
-
-        musicPlaylist.appendChild(li);
-
-        // Event listener
-        artContainer.addEventListener("click", changeMusic.bind(null, index));
-        li.addEventListener("click", changeMusic.bind(null, index));
+        const containerRemove = container.remove.bind(container);
+        container.remove = () => {
+            containerRemove();
+            li.remove();
+        };
 
         return container;
 
@@ -740,91 +726,141 @@ document.addEventListener("DOMContentLoaded", () => {
 
     }
 
-
-    window.gMetadataMap = {};
-
     const others = document.querySelector(".others-container");
     const media = document.querySelector(".media-container");
 
-    function cleanup_list() {
-        others.innerHTML = "";
-        media.innerHTML = "";
+    function cleanupList() {
+        Object.values(window.gEntryMap || {}).forEach(el => el.remove());
+
+        window.gMetadataMap = {};
+        window.gEntryMap = {};
 
         cleanupAudio(); // TODO make cleanup process not confusing
 
-        albumsList.querySelectorAll(".album-container").forEach(el => el.remove());
         albumsList.classList.add("empty");
+    }
+
+    window.updateList = function (metaMap1) {
+
+        const metaMap0 = window.gMetadataMap;
+        
+        const sortedKeys = Object.keys(metaMap1).sort((a, b) => {
+            return new Date(metaMap1[b].modTime) - new Date(metaMap1[a].modTime);
+        });
+        
+        for (const basename of sortedKeys) {
+
+            if (metaMap0[basename]) {
+
+                const object = window.gEntryMap[basename];
+                if (object) {
+                    object.update(metaMap1[basename]);
+                    //object.parentNode.appendChild(object);
+                }
+                    
+                delete metaMap0[basename];
+
+            } else {
+
+                const meta = metaMap1[basename];
+                const typ = meta.mimeCategory; // MIME type's type part
+                const src = buildURL(
+                    [URL_VIEW, basename],
+                    {[QUERY_ALBUM]: gAlbum});
+
+                if(TYPES_MEDIA.includes(typ)) {
+
+                    const wrap = createElement("div", "media-wrap");
+                    const header = createElement("h4", "media-header");
+                    const h_a = createElement("a");
+                    h_a.innerHTML = basename;
+                    h_a.setAttribute("href", src);
+                    header.appendChild(h_a);
+                    wrap.appendChild(header);
+
+                    const body_wrap = createElement("div", "media-body-wrap");
+                    let body;
+
+                    if(typ === "video") {
+                        body = createVideo(basename);
+                    } else if(typ === "image") {
+                        body = createImage(basename);
+                    } else {
+                        body = createAudio(basename);
+                    }
+
+                    body_wrap.appendChild(body);
+
+                    wrap.appendChild(body_wrap);
+
+                    wrap.update = (meta) => {
+                        body.update(meta);
+                        media.appendChild(wrap);
+                    };
+                    wrap.update(meta);
+
+                    const wrapRemove = wrap.remove.bind(wrap);
+                    wrap.remove = () => {
+                        body.remove();
+                        wrapRemove();
+                    };
+                    
+                    window.gEntryMap[basename] = wrap;
+
+                } else if (meta.isDir) {
+
+                    if (gAlbum === null) {
+                        const album = createAlbum(basename);
+
+                        album.update = () => {
+                            albumsList.insertBefore(album, albumsList.lastChild);
+                        };
+                        album.update();
+
+                        window.gEntryMap[basename] = album;
+                    }
+
+                } else {
+
+                    const wrap = createElement("div", "file-wrap");
+                    const anchor = createElement("a", "file-anchor");
+                    anchor.innerHTML = basename;
+                    anchor.setAttribute("href", src);
+                    wrap.appendChild(anchor);
+                    others.appendChild(wrap);
+
+                    wrap.update = () => {
+                        others.appendChild(wrap);
+                    };
+                    window.gEntryMap[basename] = wrap;
+
+                }
+            }
+
+        }
+
+        // Removed
+        for (const key in metaMap0) {
+            const removed = window.gEntryMap[key];
+            if(removed)
+                removed.remove();
+        }
+
+        window.gMetadataMap = metaMap1;
+
     }
 
     window.populate_list = async function () {
 
         const url = buildURL(URL_LIST, {[QUERY_ALBUM]: gAlbum});
-        const detailsUrl = buildURL(url, {[QUERY_DETAILS]: null});
-        const bodiesQueue = [];
+        const cacheUrl = buildURL(url, {[QUERY_CACHE]: null});
 
-        let response        = await fetch(url, {cache: "no-cache"});
-        let detailsPromise  = fetch(detailsUrl, {cache: "no-cache"});
-        let metaMap         = await response.json();
+        const cachedResponse  = await fetch(cacheUrl);
+        const metaMap         = await cachedResponse.json();
 
-        window.gMetadataMap = metaMap;
-        cleanup_list();
+        cleanupList();
 
-        const sortedKeys = Object.keys(metaMap).sort((a, b) => {
-            return new Date(metaMap[b].modTime) - new Date(metaMap[a].modTime);
-        });
-        
-        for (const key of sortedKeys) {
-
-            const basename = key;
-            const meta = metaMap[basename];
-            const typ = meta.mimeCategory; // MIME type's type part
-            const src = buildURL(
-                [URL_VIEW, basename],
-                {[QUERY_ALBUM]: gAlbum});
-
-            if(TYPES_MEDIA.includes(typ)) {
-
-                const wrap = createElement("div", "media-wrap");
-                const header = createElement("h4", "media-header");
-                const h_a = createElement("a");
-                h_a.innerHTML = basename;
-                h_a.setAttribute("href", src);
-                header.appendChild(h_a);
-                wrap.appendChild(header);
-
-                const body_wrap = createElement("div", "media-body-wrap");
-                let body;
-
-                if(typ === "video") {
-                    body = createVideo(basename);
-                } else if(typ === "image") {
-                    body = createImage(basename);
-                } else {
-                    body = createAudio(basename);
-                }
-
-                bodiesQueue.push(body);
-                body_wrap.appendChild(body);
-
-                wrap.appendChild(body_wrap);
-                media.appendChild(wrap);
-
-            } else if (meta.isDir) {
-
-                if (gAlbum === null)
-                    addAlbum(basename);
-
-            } else {
-
-                let wrap = createElement("div", "file-wrap");
-                let anchor = createElement("a", "file-anchor");
-                anchor.innerHTML = basename;
-                anchor.setAttribute("href", src);
-                wrap.appendChild(anchor);
-                others.appendChild(wrap);
-
-            }
-        }
+        updateList(metaMap);
 
         // TODO remove folder count from others
         const numAudio = Object.values(metaMap).filter(v => v.mimeCategory === "audio").length;
@@ -835,17 +871,10 @@ document.addEventListener("DOMContentLoaded", () => {
         musicPlayerContainer.classList[(numAudio > 0) ? "remove":"add"]("no-songs");
 
         // DETAILS
-        response = await detailsPromise;
-        window.gMetadataMap = await response.json();
+        const response = await fetch(url);
+        const metaMap2 = await response.json();
 
-        for(const body of bodiesQueue) {
-            if (!body) continue;
-            if (!document.body.contains(body)) continue;
-            if (body.populateDetails) {
-                body.populateDetails();
-            }
-        }
-        
+        updateList(metaMap2);
 
     }
 })();
@@ -862,7 +891,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     window.cleanupAudio = function() {
         gAudioNames = [];
-        musicPlaylist.innerHTML = "";
         changeMusic(null);
     }
 

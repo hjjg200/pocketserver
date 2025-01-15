@@ -26,6 +26,8 @@ A simple server built for use on iSH, an emulated linux on iOS.
 
 ## TODO
 
+- data-mod, basename not in gMetadataMap
+    - func(metaMap, animateAddition)
 - it appears that most crash come from too frequent handling of mounted icloud drive
     - Ensure only one ReadDir call at a time
 - list time, list details time

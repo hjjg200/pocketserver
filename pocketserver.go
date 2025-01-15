@@ -38,6 +38,7 @@ const CONTEXT_KEY_REQUEST_ID = 0
 const QUERY_ALBUM = "album"
 const QUERY_THUMBNAIL = "thumbnail"
 const QUERY_DETAILS = "details"
+const QUERY_CACHE = "cache"
 
 const MIME_IMAGE = "image"
 const MIME_AUDIO = "audio"
@@ -46,6 +47,7 @@ const MIME_VIDEO = "video"
 const META_EXT_TXT = ".json"
 const META_EXT_THUMB = ".jpg"
 const META_EXT_THUMB_SMALL = "_small.webp"
+const META_SLASH_IN_FILENAME = "###"
 const FFMPEG_CMD_BASE = "ffmpeg -y -i '%s' "
 const FFMPEG_CMD_AUDIO_THUMB = "-an -c:v copy '%s'"
 const FFMPEG_CMD_AUDIO_THUMB_SMALL = "-vf 'scale=iw*sqrt(16384/(iw*ih)):-1' -an -c:v libwebp -q:v 80 '%s'"
@@ -205,16 +207,23 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 		filepath.Base(r.URL.Query().Get(QUERY_ALBUM)),
 	)
 
-	// Update
-	err := gMetadataManager.UpdateDir(dir)
-	if err != nil {
-		logHTTPRequest(r, http.StatusBadRequest, "Invalid directory: ", dir)
-		http.Error(w, "Bad request", http.StatusBadRequest)
-		return
+	//
+	cached := r.URL.Query().Has(QUERY_CACHE)
+
+	if cached == false {
+			
+		// Update
+		err := gMetadataManager.UpdateDir(dir)
+		if err != nil {
+			logHTTPRequest(r, http.StatusBadRequest, "Invalid directory: ", dir)
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+	
 	}
 
 	// Get cache
-	data, _, ok := gMetadataManager.Get(dir, r.URL.Query().Has(QUERY_DETAILS))
+	data, ok := gMetadataManager.Get(dir, cached)
 	if !ok {
 		logHTTPRequest(r, http.StatusNotFound, "Invalid directory: ", dir)
 		http.Error(w, "Not found", http.StatusNotFound)
