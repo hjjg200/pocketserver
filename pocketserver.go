@@ -374,8 +374,6 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 func (w *responseWriter) WriteHeader(code int) {
 	w.code = code
 	w.ResponseWriter.WriteHeader(code)
-
-	logHTTPRequest(w.r, code)
 }
 
 func performanceMiddlewareFactory(config PerformanceConfig) func(http.Handler) http.Handler {
@@ -475,6 +473,7 @@ func performanceMiddlewareFactory(config PerformanceConfig) func(http.Handler) h
 
 			// Pass the request to the next handler
 			next.ServeHTTP(w, r)
+			logHTTPRequest(r, w.code)
 
 			// Measure the time spent
 			elapsed := time.Since(start).Nanoseconds()

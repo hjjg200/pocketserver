@@ -108,9 +108,13 @@ func logHTTPRequest(r *http.Request, status int, items ...interface{}) {
 	}
 
 	//
-	elapsed := time.Duration(0)
+	elapsedStr := ""
 	if start, ok := r.Context().Value(CONTEXT_KEY_REQUEST_START).(time.Time); ok {
-		elapsed = time.Since(start)
+		elapsed := time.Since(start)
+		elapsedStr = fmt.Sprint(elapsed)
+		if elapsed >= time.Millisecond * 100 { // 100ms
+			elapsedStr = LOG_RED + elapsedStr + LOG_RESET
+		}
 	}
 	
 	protocol := "HTTP "
@@ -140,8 +144,8 @@ func logHTTPRequest(r *http.Request, status int, items ...interface{}) {
 
 	// Log in the desired format
 	logLine := fmt.Sprintf(
-		"%s %s %s %s (%v) %s <-%s%s",
-		rID, protocol, method, statusStr, elapsed, url, raddr, tail,
+		"%s %s %s %s (%s) %s <-%s%s",
+		rID, protocol, method, statusStr, elapsedStr, url, raddr, tail,
 	)
 	logTimestamp(logLine, items...)
 
