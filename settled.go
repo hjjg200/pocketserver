@@ -281,6 +281,7 @@ func authMiddleware(next http.Handler) http.Handler {
 
 	}
 
+	// Debounce storing cookies for 3 seconds
 	fileUpdater := debounce(func() {
 		
 		gAuthInfo.ExpiryMapMu.Lock()
@@ -319,7 +320,7 @@ func authMiddleware(next http.Handler) http.Handler {
 						gAuthInfo.ExpiryMap[v] = updatedExpiry
 						gAuthInfo.ExpiryMapMu.Unlock()
 
-						go fileUpdater()
+						fileUpdater()
 
 						// If cookie exists and is valid, pass request to the main handler
 						//logHTTPRequest(r, -1, "VALID COOKIE")
@@ -336,7 +337,7 @@ func authMiddleware(next http.Handler) http.Handler {
 					logHTTPRequest(r, -1, "COOKIE EXPIRED")
 				}
 
-				go fileUpdater()
+				fileUpdater()
 
 				gAuthInfo.ExpiryMapMu.Unlock()
 
@@ -379,7 +380,7 @@ func authMiddleware(next http.Handler) http.Handler {
 				gAuthInfo.ExpiryMap[newValue] = newExpiry
 				gAuthInfo.ExpiryMapMu.Unlock()
 
-				go fileUpdater()
+				fileUpdater()
 
 				// Check if the user wants HTTP
 				if enableHTTP == "on" {

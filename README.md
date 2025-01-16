@@ -27,7 +27,7 @@ A simple server built for use on iSH, an emulated linux on iOS.
 ## TODO
 
 - playlist shuffle and loop single song
-- replay icon for retry; status timeout; graceful timeout; needs custom src handling for video, img, audio; default thumbnail and placeholder
+- sub-playlist under album
 - Create album, rename album
 - remove metadata of removed files
 - paste to upload for iOS safari
