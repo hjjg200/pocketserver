@@ -276,11 +276,10 @@
     max-height: none;
 }
 .music-playlist-li {
-    padding: .6rem 1rem;
     border-bottom: 1px dashed #ddd;
     background-color: #fff0;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: space-between;
     line-height: 1.25;
     user-select: none;
@@ -294,8 +293,10 @@
     background-color: #f5f5f5;
 }
 .music-playlist-li .left {
-    padding-right: 1rem;
+    padding: .6rem 1rem;
+    padding-right: 0;
     display: flex;
+    flex: 1;
 }
 .music-playlist-li .info {
     flex: 1;
@@ -317,6 +318,17 @@
 }
 .music-playlist-li .right {
     color: #999;
+    display: flex;
+    align-items: center;
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+.music-playlist.edit .music-playlist-li .right {
+    color: #fff0;
+    background: url(/static/menu.svg?f=%23d0d0d0);
+    background-repeat: no-repeat;
+    background-position-y: center;
+    background-position-x: 70%;
 }
 
 
@@ -1163,6 +1175,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         let targetLi;
         let draggedWrap;
         let dragPoint;
+        let dragPointerId;
         let candidateLi;
         const INTERVAL = 10; // interval for tracking pointermove event
         let scrollHandle; // interval handle
@@ -1171,7 +1184,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         // Function to handle the long press event
         let longpressHandle;
         let longpressStart;
-        const longpressDuration = 600;
+        const longpressDuration = 750;
         function handleLongPress(event) {
 
             endScroll();
@@ -1180,6 +1193,8 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
             targetLi = event.target.closest('.music-playlist-li');
             if (targetLi) {
+
+                dragPointerId = event.pointerId;
 
                 const rect = targetLi.getBoundingClientRect();
 
@@ -1215,6 +1230,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         function handleDragMove(event, touch) {
 
             if (!draggedWrap) return;
+            if (dragPointerId !== event.pointerId) return;
 
             event.preventDefault(); // Prevent scrolling during drag
 
@@ -1237,21 +1253,6 @@ const mainWrap = document.body.querySelector(".main-wrap");
             if (candidateLi !== targetLi && candidateLi !== targetNextLi) {
                 musicPlaylist.insertBefore(targetLi, candidateLi);
             }
-
-            //
-            if (touch) {
-                const margin = 160;
-                const scrollStep = 90;
-                // Scroll up when near the top
-                if (event.clientY < margin) {
-                    mainWrap.scrollBy({ top: -scrollStep, behavior: 'smooth' });
-                }
-                // Scroll down when near the bottom
-                else if (event.clientY > window.innerHeight - margin) {
-                    mainWrap.scrollBy({ top: scrollStep, behavior: 'smooth' });
-                }
-            }
-
         }
 
         function getClosestLi(clientY) {
@@ -1287,10 +1288,12 @@ const mainWrap = document.body.querySelector(".main-wrap");
                 .catch(error => console.error('Edit playlist error:', error));
             
         });
-        function handleDragEnd() {
+
+        function handleDragEnd(event) {
 
             if (!draggedWrap) return;
             if (!candidateLi) return;
+            if (dragPointerId !== event.pointerId) return;
 
             //musicPlaylist.classList.remove("edit");
             draggedWrap.remove();
@@ -1314,6 +1317,19 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
         }
 
+        musicPlaylist.addEventListener("click", event => {
+            if (draggedWrap) return;
+
+            const targetLi = event.target.closest('.music-playlist-li');
+
+            // When user plays music, exit the edit mode and ensure visibility
+            if (targetLi) {
+                musicPlaylist.classList.remove("edit");
+                ensureLiVisibility(musicPlaylist, targetLi);
+                ensureLiVisibility(mainWrap, musicPlaylist);
+            }
+        });
+
         // Event listeners for mouse and touch
         /* musicPlaylist.addEventListener('mousedown', (event) => {
             longpressHandle = setTimeout(() => handleLongPress(event), longpressDuration);
@@ -1331,11 +1347,12 @@ const mainWrap = document.body.querySelector(".main-wrap");
         let clickedTime;
         let clickStart = {};
         let touching = false;
-        let touchmoveLastY;
-        let scrollSpeed;
+        let touchmoveLastY = {};
+        let scrollSpeed = {};
+        let borderHandler;
 
         function endScroll() {
-            scrollSpeed = 0;
+            scrollSpeed = {};
             clearInterval(scrollHandle);
         }
 
@@ -1345,46 +1362,93 @@ const mainWrap = document.body.querySelector(".main-wrap");
             event.preventDefault(); // Prevent default long-press behavior
                                     // Without this iOS will handle the scroll on its own
 
+            const newTouch = event.changedTouches[0]; // Get the new touch
+            const allTouches = event.touches; // Get all active touches
+
+            // Find the index in the full touch list
+            const index = Array.from(allTouches).findIndex(touch => touch.identifier === newTouch.identifier);
+
             // Manual handling of click on li elements
             clickedLi = event.target.closest('.music-playlist-li');
             clickedTime = Date.now();
-            clickStart.clientX = event.touches[0].clientX;
-            clickStart.clientY = event.touches[0].clientY;
+            clickStart.clientX = event.touches[index].clientX;
+            clickStart.clientY = event.touches[index].clientY;
 
             // Scroll interval for executing scrollTo
             endScroll();
             scrollHandle = setInterval(() => {
 
-                if (scrollSpeed) {
-                    if (musicPlaylist.clientHeight < musicPlaylist.scrollHeight) {
-                        musicPlaylist.scrollTo({ top: musicPlaylist.scrollTop + scrollSpeed });
-                    } else {
-                        if (!draggedWrap) {
-                            mainWrap.scrollTo({ top: mainWrap.scrollTop + scrollSpeed });
-                        }
-                    }
-                    
-                    scrollSpeed *= scrollDecelerate; // Decelerate
-                    if (Math.abs(scrollSpeed) < 0.5) 
-                        clearInterval(scrollHandle);
+                let vals = Object.values(scrollSpeed);
+                if (vals.length == 0) return;
+
+                const sum = vals.reduce((acc, val) => acc + val, 0);
+
+                if (musicPlaylist.clientHeight < musicPlaylist.scrollHeight) {
+                    musicPlaylist.scrollTo({ top: musicPlaylist.scrollTop + sum });
+                } else {
+                    mainWrap.scrollTo({ top: mainWrap.scrollTop + sum });
                 }
+                
+                // Decelerate
+                for (const key in scrollSpeed)
+                    scrollSpeed[key] *= scrollDecelerate;
+                
+                if (Math.abs(sum) < 0.5) 
+                    endScroll();
 
             }, INTERVAL);
 
+            // Border handler
+            // handling when dragging of li reaches the border of screen
+            clearInterval(borderHandler);
+            borderHandler = setInterval(() => {
+
+                if (!draggedWrap) return;
+                if (touchmoveLastY[dragPointerId] === undefined) return;
+
+                const margin = 200;
+                const scrollStep = 225;
+                // Scroll up when near the top
+                if (touchmoveLastY[dragPointerId] < margin) {
+                    mainWrap.scrollBy({ top: -scrollStep, behavior: 'smooth' });
+                }
+                // Scroll down when near the bottom
+                else if (touchmoveLastY[dragPointerId] > mainWrap.clientHeight - margin) {
+                    mainWrap.scrollBy({ top: scrollStep, behavior: 'smooth' });
+                }
+            
+            }, 1000);
+
+        });
+        document.addEventListener('touchend', (event) => {
+            //
+            if (event.touches.length === 0) {
+                touching = false;
+                touchmoveLastY = {};
+                clearInterval(borderHandler);
+            }
         });
 
         musicPlaylist.addEventListener('pointerdown', (event) => {
+
+            if (draggedWrap) return;
+
             longpressStart = {
                 clientX: event.clientX,
                 clientY: event.clientY
             };
-            longpressHandle = setTimeout(() => handleLongPress(event), longpressDuration);
+
+            // When it is already in edit mode, use the right side to move it immediately
+            if (musicPlaylist.classList.contains("edit") && event.target.closest(".right"))
+                handleLongPress(event);
+            else
+                longpressHandle = setTimeout(() => handleLongPress(event), longpressDuration);
         });
 
         const touchend = (event) => {
 
             // Manual clicking
-            if (touching && clickedLi && (Date.now() - clickedTime < longpressDuration)) {
+            if (touching && !draggedWrap && clickedLi && (Date.now() - clickedTime < longpressDuration)) {
                 if (Math.abs(clickStart.clientX - event.clientX) < 5 &&
                     Math.abs(clickStart.clientY - event.clientY) < 5) {
                     clickedLi.click();
@@ -1392,24 +1456,24 @@ const mainWrap = document.body.querySelector(".main-wrap");
             }
             clickedLi = null;
 
-            //
-            touching = false;
-            touchmoveLastY = null;
-
             clearTimeout(longpressHandle);
 
-            handleDragEnd();
+            handleDragEnd(event);
         
         };
         let touchmove = throttle(INTERVAL, (event) => {
 
             // Manual handling of scroll
-            if (touching && touchmoveLastY !== null) {
-                const delta = touchmoveLastY-event.clientY;
-                scrollSpeed = delta;
+            if (touching
+                && event.pointerId !== dragPointerId
+                && touchmoveLastY[event.pointerId] !== undefined) {
+
+                const delta = touchmoveLastY[event.pointerId]-event.clientY;
+                scrollSpeed[event.pointerId] = delta;
+
             }
 
-            touchmoveLastY = event.clientY;
+            touchmoveLastY[event.pointerId] = event.clientY;
 
             if (longpressStart) {
                 if (Math.abs(longpressStart.clientX - event.clientX) > 5 ||
