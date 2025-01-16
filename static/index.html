@@ -1027,16 +1027,13 @@ const mainWrap = document.body.querySelector(".main-wrap");
         updateMusicArtBackground();
 
         gAudio.src = src;
-    
-        await mediaActionHandlers["play"]();
-        
-        let metadata = gMetadataMap[basename];
-        if (metadata.title === "") {
-            metadata.title = basename;
+        const { details } = gMetadataMap[basename];
+        if (details.title === "") {
+            details.title = basename;
         }
-        updateMediaSessionMetadata(metadata.title, metadata.artist, metadata.album, thumb);
+        updateMediaSessionMetadata(details.title, details.artist, details.album, thumb);
         updateMediaSessionPosition();
-
+        
         //
         const li0 = musicPlaylist.querySelector(".playing");
         if (li0) li0.classList.remove("playing");
@@ -1044,6 +1041,8 @@ const mainWrap = document.body.querySelector(".main-wrap");
         const li1 = musicPlaylist.querySelectorAll("li")[index];
         li1.classList.add("playing");
         ensureLiVisibility(musicPlaylist, li1);
+
+        await mediaActionHandlers["play"]();
 
     }
 

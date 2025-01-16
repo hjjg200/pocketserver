@@ -281,6 +281,19 @@ func authMiddleware(next http.Handler) http.Handler {
 
 	}
 
+	fileUpdater := debounce(func() {
+		
+		gAuthInfo.ExpiryMapMu.Lock()
+		defer gAuthInfo.ExpiryMapMu.Unlock()
+
+		err := storeAuthCookies()
+		if err != nil {
+			logError("Failed to store auth file", err)
+			return
+		}
+
+	}, time.Second * 3)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		now := time.Now()
@@ -304,12 +317,14 @@ func authMiddleware(next http.Handler) http.Handler {
 						http.SetCookie(w, makeAuthCookie(v, updatedExpiry))
 						
 						gAuthInfo.ExpiryMap[v] = updatedExpiry
+						gAuthInfo.ExpiryMapMu.Unlock()
+
+						go fileUpdater()
 
 						// If cookie exists and is valid, pass request to the main handler
 						//logHTTPRequest(r, -1, "VALID COOKIE")
 						next.ServeHTTP(w, r)
 
-						gAuthInfo.ExpiryMapMu.Unlock()
 						return
 
 					} else {
@@ -321,10 +336,7 @@ func authMiddleware(next http.Handler) http.Handler {
 					logHTTPRequest(r, -1, "COOKIE EXPIRED")
 				}
 
-				err = storeAuthCookies()
-				if err != nil {
-					logHTTPRequest(r, -1, "failed to store auth cookies!")
-				}
+				go fileUpdater()
 
 				gAuthInfo.ExpiryMapMu.Unlock()
 
@@ -365,12 +377,9 @@ func authMiddleware(next http.Handler) http.Handler {
 				
 				gAuthInfo.ExpiryMapMu.Lock()
 				gAuthInfo.ExpiryMap[newValue] = newExpiry
-				
-				err = storeAuthCookies()
-				if err != nil {
-					logHTTPRequest(r, -1, "failed to store auth cookies!")
-				}
 				gAuthInfo.ExpiryMapMu.Unlock()
+
+				go fileUpdater()
 
 				// Check if the user wants HTTP
 				if enableHTTP == "on" {

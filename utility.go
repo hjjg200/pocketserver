@@ -19,6 +19,7 @@ import (
 	"os"
 	"sync/atomic"
 	"time"
+	"sync"
 )
 
 type Semaphore struct{
@@ -345,6 +346,31 @@ func throttleAtomic(fn func(), delay time.Duration) func() {
 			}
 		}
 	}
+}
+
+func debounce(fn func(), delay time.Duration) func() {
+
+    if delay == 0 {
+        // If no delay, just run the function immediately.
+        return fn
+    }
+
+    var mu sync.Mutex
+    var timer *time.Timer
+
+    return func() {
+        mu.Lock()
+        defer mu.Unlock()
+
+        // If a timer is already running, stop it so we can reset.
+        if timer != nil {
+            timer.Stop()
+        }
+
+        // Schedule a new timer that fires after `delay`.
+        timer = time.AfterFunc(delay, fn)
+    }
+
 }
 
 // getOutboundIPs retrieves the preferred outbound IP address
