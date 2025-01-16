@@ -1164,12 +1164,17 @@ const mainWrap = document.body.querySelector(".main-wrap");
         let draggedWrap;
         let dragPoint;
         let candidateLi;
+        const INTERVAL = 10; // interval for tracking pointermove event
+        let scrollHandle; // interval handle
+        const scrollDecelerate = Math.pow(0.02, 1/(1000/INTERVAL));
 
         // Function to handle the long press event
         let longpressHandle;
         let longpressStart;
         const longpressDuration = 600;
         function handleLongPress(event) {
+
+            endScroll();
 
             musicPlaylist.querySelectorAll(".edit-target").forEach(el => el.classList.remove("edit-target"));
 
@@ -1270,6 +1275,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
             return closest; // Return the closest <div>
         }
 
+        // Debounce the editing api call
         const editPlaylist = debounce(5000, () => {
                         
             const url = buildURL("/editPlaylist", {[QUERY_ALBUM]: gAlbum});
@@ -1326,16 +1332,47 @@ const mainWrap = document.body.querySelector(".main-wrap");
         let clickStart = {};
         let touching = false;
         let touchmoveLastY;
+        let scrollSpeed;
+
+        function endScroll() {
+            scrollSpeed = 0;
+            clearInterval(scrollHandle);
+        }
+
         musicPlaylist.addEventListener('touchstart', (event) => {
             touching = true;
 
             event.preventDefault(); // Prevent default long-press behavior
+                                    // Without this iOS will handle the scroll on its own
 
+            // Manual handling of click on li elements
             clickedLi = event.target.closest('.music-playlist-li');
             clickedTime = Date.now();
             clickStart.clientX = event.touches[0].clientX;
             clickStart.clientY = event.touches[0].clientY;
+
+            // Scroll interval for executing scrollTo
+            endScroll();
+            scrollHandle = setInterval(() => {
+
+                if (scrollSpeed) {
+                    if (musicPlaylist.clientHeight < musicPlaylist.scrollHeight) {
+                        musicPlaylist.scrollTo({ top: musicPlaylist.scrollTop + scrollSpeed });
+                    } else {
+                        if (!draggedWrap) {
+                            mainWrap.scrollTo({ top: mainWrap.scrollTop + scrollSpeed });
+                        }
+                    }
+                    
+                    scrollSpeed *= scrollDecelerate; // Decelerate
+                    if (Math.abs(scrollSpeed) < 0.5) 
+                        clearInterval(scrollHandle);
+                }
+
+            }, INTERVAL);
+
         });
+
         musicPlaylist.addEventListener('pointerdown', (event) => {
             longpressStart = {
                 clientX: event.clientX,
@@ -1346,6 +1383,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
         const touchend = (event) => {
 
+            // Manual clicking
             if (touching && clickedLi && (Date.now() - clickedTime < longpressDuration)) {
                 if (Math.abs(clickStart.clientX - event.clientX) < 5 &&
                     Math.abs(clickStart.clientY - event.clientY) < 5) {
@@ -1354,23 +1392,21 @@ const mainWrap = document.body.querySelector(".main-wrap");
             }
             clickedLi = null;
 
+            //
             touching = false;
             touchmoveLastY = null;
+
             clearTimeout(longpressHandle);
+
             handleDragEnd();
+        
         };
-        let touchmove = throttle(10, (event) => {
+        let touchmove = throttle(INTERVAL, (event) => {
 
             // Manual handling of scroll
             if (touching && touchmoveLastY !== null) {
                 const delta = touchmoveLastY-event.clientY;
-                if (musicPlaylist.clientHeight < musicPlaylist.scrollHeight) {
-                    musicPlaylist.scrollTo({ top: musicPlaylist.scrollTop + delta });
-                } else {
-                    if (!draggedWrap) {
-                        mainWrap.scrollTo({ top: mainWrap.scrollTop + delta });
-                    }
-                }
+                scrollSpeed = delta;
             }
 
             touchmoveLastY = event.clientY;
