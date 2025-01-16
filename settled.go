@@ -544,7 +544,7 @@ func processSvg(svg0 string, q url.Values) string {
 				line = strings.Replace(line, `fill="#5f6368"`, `fill="`+fill+`"`, 1)
 			}
 		}
-		svg1 = line + "\n"
+		svg1 = svg1 + line + "\n"
 	}
 	return svg1
 

@@ -485,7 +485,8 @@ input#cache-album {
     <script src="/static/utility.js"></script>
     <script>
 
-const DEFAULT_ARTWORK = "/static/default_artwork.jpg";
+const DEFAULT_ARTWORK = "/static/default_artwork.svg";
+const PLACEHOLDER_IMAGE = "/static/placeholder.svg";
 
 const QUERY_ALBUM = "album";
 const QUERY_THUMBNAIL = "thumbnail";
@@ -622,7 +623,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
             {[QUERY_ALBUM]: gAlbum}
         );
         
-        thumbnail.src = DEFAULT_ARTWORK;
+        thumbnail.src = PLACEHOLDER_IMAGE;
         observeWithCallback(thumbnail, () => {
             thumbnail.src = buildURL(
                 src, 
@@ -649,7 +650,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
     function createImage(basename) {
 
         const image = createElement("img", "media-body");
-        image.setAttribute("src", DEFAULT_ARTWORK);
+        image.setAttribute("src", PLACEHOLDER_IMAGE);
         
         observeWithCallback(image, () => {
             image.setAttribute("src", buildURL(
@@ -1196,15 +1197,12 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
                 dragPointerId = event.pointerId;
 
-                const rect = targetLi.getBoundingClientRect();
+                const listRect = musicPlaylist.getBoundingClientRect();
+                const liRect = targetLi.getBoundingClientRect();
 
                 dragPoint = {};
-                dragPoint.x = event.clientX - rect.left;
-                dragPoint.y = event.clientY - rect.top;
-
-                // Add scroll y to compensate
-                mainWrap.scrollTo({ top: mainWrap.scrollTop+musicPlaylist.scrollTop });
-                musicPlaylist.classList.add("edit");
+                dragPoint.x = event.clientX - liRect.left;
+                dragPoint.y = event.clientY - liRect.top;
 
                 //
                 targetLi.classList.add("edit-target");
@@ -1218,12 +1216,17 @@ const mainWrap = document.body.querySelector(".main-wrap");
                 draggedWrap.style.position = "absolute";
                 draggedWrap.style.zIndex = "1000";
                 draggedWrap.style.background = "#fff";
-                draggedWrap.style.width = `${rect.width}px`;
+                draggedWrap.style.width = `${liRect.width}px`;
 
                 draggedWrap.appendChild(draggedLi);
                 mainWrap.appendChild(draggedWrap);
 
                 handleDragMove(event);
+
+                // Add scroll y to compensate
+                musicPlaylist.classList.add("edit");
+                const liRect2 = targetLi.getBoundingClientRect();
+                mainWrap.scrollTo({ top: liRect2.top-event.clientY+dragPoint.y });
             }
         }
 

@@ -321,6 +321,13 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 
 	if query.Has(QUERY_THUMBNAIL) {
 
+		// Fallback
+		cat := getMimeCategory(base)
+		fallback := "/static/placeholder.svg"
+		if cat == "audio" {
+			fallback = "/static/default_artwork.svg"
+		}
+
 		// Paths
 		thumbpath := filepath.Join(gAppInfo.MetadataDir, fullpath)
 		if query.Get(QUERY_THUMBNAIL) == "small" {
@@ -338,7 +345,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			// TODO if client has image advise it to use it
 			logHTTPRequest(r, -1, "Failed to read thumbnail err:", err)
-			http.Redirect(w, r, "/static/default_artwork.jpg", http.StatusSeeOther)
+			http.Redirect(w, r, fallback, http.StatusSeeOther)
 			return
 		}
 		if checkNotModified(r, info.ModTime()) {
@@ -350,7 +357,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		thumb, err := os.ReadFile(thumbpath)
 		if err != nil || len(thumb) == 0 {
 			logHTTPRequest(r, -1, "Failed to read thumbnail err:", err)
-			http.Redirect(w, r, "/static/default_artwork.jpg", http.StatusSeeOther)
+			http.Redirect(w, r, fallback, http.StatusSeeOther)
 			return
 		}
 
