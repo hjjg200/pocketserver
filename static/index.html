@@ -349,6 +349,7 @@ input#cache-album {
         </style>
     </head>
     <body>
+        <div class="main-wrap">
         <div class="main-container">
 
 
@@ -466,6 +467,7 @@ input#cache-album {
                 
             </div>
         </div>
+        </div>
     </body>
     <script src="/static/crc32.js"></script>
     <script src="/static/utility.js"></script>
@@ -487,8 +489,10 @@ document.addEventListener("DOMContentLoaded", () => {
     checkServer();
 });
 
-
-
+// Uses mainWrap instead of window when doing scrollTo
+// because the very same operation behaved unexpectedly when run on
+// window in iOS safari
+const mainWrap = document.body.querySelector(".main-wrap");
 
 (() => { // LIST
         
@@ -916,6 +920,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cleanupAudio();
     });
     window.cleanupAudio = function() {
+        musicPlaylist.classList.remove("edit");
         changeMusic(null);
     }
 
@@ -1163,7 +1168,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Function to handle the long press event
         let longpressHandle;
         let longpressStart;
-        const longpressDuration = 750;
+        const longpressDuration = 600;
         function handleLongPress(event) {
 
             musicPlaylist.querySelectorAll(".edit-target").forEach(el => el.classList.remove("edit-target"));
@@ -1178,7 +1183,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 dragPoint.y = event.clientY - rect.top;
 
                 // Add scroll y to compensate
-                window.scrollTo({ top: window.scrollY+musicPlaylist.scrollTop });
+                mainWrap.scrollTo({ top: mainWrap.scrollTop+musicPlaylist.scrollTop });
                 musicPlaylist.classList.add("edit");
 
                 //
@@ -1196,7 +1201,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 draggedWrap.style.width = `${rect.width}px`;
 
                 draggedWrap.appendChild(draggedLi);
-                document.body.appendChild(draggedWrap);
+                mainWrap.appendChild(draggedWrap);
 
                 handleDragMove(event);
             }
@@ -1208,8 +1213,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
             event.preventDefault(); // Prevent scrolling during drag
 
-            draggedWrap.style.left = `${event.clientX - dragPoint.x + window.scrollX}px`;
-            draggedWrap.style.top = `${event.clientY - dragPoint.y + window.scrollY + 5}px`;
+            draggedWrap.style.left = `${event.clientX - dragPoint.x}px`;
+            draggedWrap.style.top = `${event.clientY - dragPoint.y + 5}px`;
 
             candidateLi = getClosestLi(event.clientY);
 
@@ -1230,15 +1235,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
             //
             if (touch) {
-                const margin = 120;
-                const scrollStep = 45;
+                const margin = 160;
+                const scrollStep = 90;
                 // Scroll up when near the top
                 if (event.clientY < margin) {
-                    window.scrollBy({ top: -scrollStep, behavior: 'smooth' });
+                    mainWrap.scrollBy({ top: -scrollStep, behavior: 'smooth' });
                 }
                 // Scroll down when near the bottom
                 else if (event.clientY > window.innerHeight - margin) {
-                    window.scrollBy({ top: scrollStep, behavior: 'smooth' });
+                    mainWrap.scrollBy({ top: scrollStep, behavior: 'smooth' });
                 }
             }
 
@@ -1265,7 +1270,17 @@ document.addEventListener("DOMContentLoaded", () => {
             return closest; // Return the closest <div>
         }
 
-        let editPlaylistHandle;
+        const editPlaylist = debounce(5000, () => {
+                        
+            const url = buildURL("/editPlaylist", {[QUERY_ALBUM]: gAlbum});
+
+            fetch(url, {
+                method: 'POST',
+                body: JSON.stringify(gPlaylist),
+            })
+                .catch(error => console.error('Edit playlist error:', error));
+            
+        });
         function handleDragEnd() {
 
             if (!draggedWrap) return;
@@ -1289,18 +1304,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (currentBase) gAudioCurrentIndex = gPlaylist.indexOf(currentBase);
 
             // Send edit
-            clearTimeout(editPlaylistHandle);
-            editPlaylistHandle = setTimeout(() => {
-                        
-                const url = buildURL("/editPlaylist", {[QUERY_ALBUM]: gAlbum});
-
-                fetch(url, {
-                    method: 'POST',
-                    body: JSON.stringify(gPlaylist),
-                })
-                    .catch(error => console.error('Edit playlist error:', error));
-                
-            }, 5000);
+            editPlaylist();
 
         }
 
@@ -1317,12 +1321,20 @@ document.addEventListener("DOMContentLoaded", () => {
             handleDragEnd();
         });*/
 
+        let clickedLi;
+        let clickedTime;
+        let clickStart = {};
         let touching = false;
+        let touchmoveLastY;
         musicPlaylist.addEventListener('touchstart', (event) => {
             touching = true;
 
-            if (musicPlaylist.clientHeight < musicPlaylist.scrollHeight)
-                event.preventDefault(); // Prevent default long-press behavior
+            event.preventDefault(); // Prevent default long-press behavior
+
+            clickedLi = event.target.closest('.music-playlist-li');
+            clickedTime = Date.now();
+            clickStart.clientX = event.touches[0].clientX;
+            clickStart.clientY = event.touches[0].clientY;
         });
         musicPlaylist.addEventListener('pointerdown', (event) => {
             longpressStart = {
@@ -1332,8 +1344,16 @@ document.addEventListener("DOMContentLoaded", () => {
             longpressHandle = setTimeout(() => handleLongPress(event), longpressDuration);
         });
 
-        let touchmoveLastY;
-        const touchend = () => {
+        const touchend = (event) => {
+
+            if (touching && clickedLi && (Date.now() - clickedTime < longpressDuration)) {
+                if (Math.abs(clickStart.clientX - event.clientX) < 5 &&
+                    Math.abs(clickStart.clientY - event.clientY) < 5) {
+                    clickedLi.click();
+                }
+            }
+            clickedLi = null;
+
             touching = false;
             touchmoveLastY = null;
             clearTimeout(longpressHandle);
@@ -1342,9 +1362,15 @@ document.addEventListener("DOMContentLoaded", () => {
         let touchmove = throttle(10, (event) => {
 
             // Manual handling of scroll
-            if (touching && touchmoveLastY) {
+            if (touching && touchmoveLastY !== null) {
                 const delta = touchmoveLastY-event.clientY;
-                musicPlaylist.scrollTo({ top: musicPlaylist.scrollTop + delta });
+                if (musicPlaylist.clientHeight < musicPlaylist.scrollHeight) {
+                    musicPlaylist.scrollTo({ top: musicPlaylist.scrollTop + delta });
+                } else {
+                    if (!draggedWrap) {
+                        mainWrap.scrollTo({ top: mainWrap.scrollTop + delta });
+                    }
+                }
             }
 
             touchmoveLastY = event.clientY;
@@ -1391,7 +1417,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     window.uploadFiles = async function (files) {
 
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        mainWrap.scrollTo({ top: 0, behavior: 'smooth' });
 
         upload_processed = true;
         uploadInfoContainer.classList.remove("error");

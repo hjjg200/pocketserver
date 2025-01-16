@@ -474,6 +474,7 @@ func performanceMiddlewareFactory(config PerformanceConfig) func(http.Handler) h
 	}
 
 	//
+	logDebug(config.MaxConcurrentRequests, "max requests")
 	sem := NewSemaphore(config.MaxConcurrentRequests, config.RequestTimeout)
 
 	return func(next http.Handler) http.Handler {
