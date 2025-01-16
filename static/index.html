@@ -1234,37 +1234,8 @@ const mainWrap = document.body.querySelector(".main-wrap");
             }
         }
 
-        function handleDragMove(event, touch) {
-
-            if (!draggedWrap) return;
-            if (dragPointerId !== event.pointerId) return;
-
-            event.preventDefault(); // Prevent scrolling during drag
-
-            draggedWrap.style.left = `${event.clientX - dragPoint.x}px`;
-            draggedWrap.style.top = `${event.clientY - dragPoint.y + 5}px`;
-
-            candidateLi = getClosestLi(event.clientY);
-
-            swapLi(targetLi, candidateLi);
-            return;
-            //
-            let targetNextLi = null;
-            let i = targetLi.nextElementSibling;
-            while (i) {
-                if (i.classList.contains('music-playlist-li')) {
-                    targetNextLi = i;
-                    break; // Found the next element of the desired type
-                }
-                i = i.nextElementSibling; // Move to the next sibling
-            }
-
-            if (candidateLi !== targetLi && candidateLi !== targetNextLi) {
-                musicPlaylist.insertBefore(targetLi, candidateLi);
-            }
-        }
-
-        function swapLi(li0, li1) {
+        
+        const swapLi = throttle(200, (li0, li1) => {
             const item1 = li0;
             const item2 = li1;
 
@@ -1294,8 +1265,23 @@ const mainWrap = document.body.querySelector(".main-wrap");
             } else {
                 parent.insertBefore(item1, item2Next);
             }
-        }
+        });
 
+        function handleDragMove(event, touch) {
+
+            if (!draggedWrap) return;
+            if (dragPointerId !== event.pointerId) return;
+
+            event.preventDefault(); // Prevent scrolling during drag
+
+            draggedWrap.style.left = `${event.clientX - dragPoint.x}px`;
+            draggedWrap.style.top = `${event.clientY - dragPoint.y + 5}px`;
+
+            candidateLi = getClosestLi(event.clientY);
+
+            swapLi(targetLi, candidateLi);
+
+        }
 
         function getClosestLi(clientY) {
             const items = musicPlaylist.querySelectorAll('.music-playlist-li'); // Get all items in the container
