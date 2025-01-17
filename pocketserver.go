@@ -522,6 +522,9 @@ func performanceMiddlewareFactory(config PerformanceConfig) func(http.Handler) h
 
 			// Pass the request to the next handler
 			next.ServeHTTP(w, r)
+			if w.code == 0 {
+				w.WriteHeader(200)
+			}
 			logHTTPRequest(r, w.code)
 
 			// Measure the time spent
@@ -617,8 +620,14 @@ func main() {
 	}
 
 	// IP
-	li, _ := getOutboundIPs()
-	gAppInfo.LocalIP = li
+	logDebug(getLocalAddresses())
+	piface, addrMap, err := getLocalAddresses()
+	must(err)
+	intiface, err := getInternetInterface()
+	if err != nil {
+		piface = intiface
+	}
+	gAppInfo.LocalIPs = addrMap[piface]
 
 	// MUX
 	mux := http.NewServeMux()
@@ -641,7 +650,7 @@ func main() {
 	// Auth
 	loadAuthCookies()
 
-	ensureTLSCertificate("cert.pem", "key.pem", li)
+	ensureTLSCertificate("cert.pem", "key.pem", addrMap[piface])
 	server := &http.Server{
 		Addr: ":443",
 		Handler: httpsMux,
@@ -665,8 +674,14 @@ func main() {
 
 	// Start the server
 	logInfo("SERVER STARTED AT", now.Format(time.RFC3339), fmt.Sprint("(", time.Now().Sub(now),")"))
-	logInfo("http://" + gAppInfo.LocalIP)
-	logInfo("https://" + gAppInfo.LocalIP)
+	logInfo("http://[::1]")
+	for _, ipStr := range gAppInfo.LocalIPs {
+		if isIPv4(ipStr) {
+			logInfo("https://" + ipStr)
+		} else {
+			logInfo("https://[" + ipStr + "]")
+		}
+	}
 
 	for {
 		logError(server.ListenAndServeTLS(CERT_PEM, KEY_PEM)) // Certificates are already provided in memory

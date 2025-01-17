@@ -18,7 +18,7 @@ import (
 
 type AppInfo struct {
 	Start time.Time
-	LocalIP string // IPv4 string of local ip at startup
+	LocalIPs []string // preferred local ips
 	UploadCount int // Total count of uploads since startup // TODO atomic
 	UploadDir string
 	MetadataDir string
@@ -77,6 +77,13 @@ func logFatal(items ...interface{}) {
 	items = append(items, LOG_RESET)
 	logTimestamp(LOG_RED+LOG_INVERSE+"["+"FATAL"+"]", items...)
 	os.Exit(1)
+}
+func logTime(items ...time.Time) time.Time {
+	if len(items) == 0 {
+		return time.Now()
+	}
+	logDebug(time.Since(items[0]))
+	return time.Now()
 }
 func logDebug(items ...interface{}) {
 	if gAppInfo.Debug {
@@ -244,9 +251,9 @@ var gAuthInfo AuthInfo
 
 type HTTPInfo struct {
 	Enabled				bool
-	EnablerRemoteIP		string // IPv4
-	LocalIPAtEnabled	string
-	RemoteIPAtEnabled	string
+	EnablerRemoteIP		string
+	InterfaceHash		string
+	InterfaceHashMu		sync.Mutex
 }
 var gHTTPInfo HTTPInfo
 
@@ -265,9 +272,14 @@ func authMiddleware(next http.Handler) http.Handler {
 		// Set HTTP info for later checkups
 		gHTTPInfo.EnablerRemoteIP = raddr
 
-		li, ri := getOutboundIPs()
-		gHTTPInfo.LocalIPAtEnabled = li
-		gHTTPInfo.RemoteIPAtEnabled = ri
+		_, addrMap, err := getLocalAddresses()
+		if err != nil {
+			logHTTPRequest(r, -1, "handleEnableHTTP getLocalAddresses", err)
+			http.Error(w, "Error getting address", http.StatusInternalServerError)
+			return
+		}
+		ifaceHash := generateInterfaceHash(addrMap)
+		gHTTPInfo.InterfaceHash = ifaceHash
 
 		// Construct the HTTP URL for redirection
 		httpURL := fmt.Sprintf("http://%s/", r.Host)
@@ -480,6 +492,17 @@ func httpFilterMiddleware(next http.Handler) http.Handler {
 		http.Redirect(w, r, target, http.StatusFound)
 	}
 
+	ifaceHash := ""
+	ifaceChecker := throttleAtomic(func() {
+		_, addrMap, err := getLocalAddresses()
+		if err != nil {
+			logError("Failed to get interface information", err)
+			ifaceHash = ""
+			return
+		}
+		ifaceHash = generateInterfaceHash(addrMap)
+	}, time.Second * 10)
+
 	return http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {
 
 		raddr, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -490,7 +513,7 @@ func httpFilterMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Localhost privilege
-		if raddr == "127.0.0.1" {
+		if raddr == "127.0.0.1" || raddr == "::1" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -504,13 +527,15 @@ func httpFilterMiddleware(next http.Handler) http.Handler {
 				return
 			}
 
-			li, ri := getOutboundIPs()
-			if li != gHTTPInfo.LocalIPAtEnabled || ri != gHTTPInfo.RemoteIPAtEnabled {
+			_t := logTime()
+			ifaceChecker()
+			if ifaceHash == "" || ifaceHash != gHTTPInfo.InterfaceHash {
 				gHTTPInfo.Enabled = false
-				logHTTPRequest(r, -1, "HTTP is disabled, li ri mismatch", "HTTP is disabled, li ri mismatch", gHTTPInfo.LocalIPAtEnabled, li, gHTTPInfo.RemoteIPAtEnabled, ri)
+				logHTTPRequest(r, -1, "HTTP is disabled, interface hash mismatch", gHTTPInfo.InterfaceHash, ifaceHash)
 				redirectToHTTPS(w, r)
 				return
 			}
+			logTime(_t)
 				
 			// Handle temporaryily disabled https
 			next.ServeHTTP(w, r)

@@ -822,6 +822,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
                     const h_a = createElement("a");
                     h_a.innerHTML = basename;
                     h_a.setAttribute("href", src);
+                    h_a.setAttribute("target", "_blank");
                     header.appendChild(h_a);
                     wrap.appendChild(header);
 
@@ -873,6 +874,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
                     const anchor = createElement("a", "file-anchor");
                     anchor.innerHTML = basename;
                     anchor.setAttribute("href", src);
+                    anchor.setAttribute("target", "_blank");
                     wrap.appendChild(anchor);
                     others.appendChild(wrap);
 
@@ -1040,7 +1042,6 @@ const mainWrap = document.body.querySelector(".main-wrap");
             details.title = basename;
         }
         updateMediaSessionMetadata(details.title, details.artist, details.album, thumb);
-        updateMediaSessionPosition();
         
         //
         const li0 = musicPlaylist.querySelector(".playing");
@@ -1051,6 +1052,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         ensureLiVisibility(musicPlaylist, li1);
 
         await mediaActionHandlers["play"]();
+        updateMediaSessionPosition();
 
     }
 
@@ -1186,8 +1188,6 @@ const mainWrap = document.body.querySelector(".main-wrap");
         let dragPointerId;
         let candidateLi;
         const INTERVAL = 10; // interval for tracking pointermove event
-        let scrollHandle; // interval handle
-        const scrollDecelerate = Math.pow(0.93, 1/(10/INTERVAL));
 
         // Function to handle the long press event
         let longpressHandle;
@@ -1304,8 +1304,8 @@ const mainWrap = document.body.querySelector(".main-wrap");
             return closest; // Return the closest <div>
         }
 
-        // Debounce the editing api call
-        const editPlaylist = debounce(5000, () => {
+        // Throttle the editing api call
+        const editPlaylist = throttle(5000, () => {
                         
             const url = buildURL("/editPlaylist", {[QUERY_ALBUM]: gAlbum});
 
@@ -1378,10 +1378,38 @@ const mainWrap = document.body.querySelector(".main-wrap");
         let touchmoveLastY = {};
         let scrollSpeed = {};
         let borderHandler;
+        let scrollHandle; // interval handle
+        const scrollDecelerate = Math.pow(0.96, 1/(10/INTERVAL));
+        const scrollThreshold = 1.5;
 
         function endScroll() {
             scrollSpeed = {};
             clearInterval(scrollHandle);
+            scrollHandle = null;
+        }
+
+        function startScroll() {
+            if (scrollHandle) return;
+            scrollHandle = setInterval(() => {
+
+                let vals = Object.values(scrollSpeed);
+                if (vals.length == 0) return;
+
+                const sum = vals.reduce((acc, val) => acc + val, 0);
+                
+                if (sum === 0) endScroll();
+
+                if (musicPlaylist.clientHeight < musicPlaylist.scrollHeight) {
+                    musicPlaylist.scrollTo({ top: musicPlaylist.scrollTop + sum });
+                } else {
+                    mainWrap.scrollTo({ top: mainWrap.scrollTop + sum });
+                }
+                
+                // Decelerate
+                for (const key in scrollSpeed)
+                    scrollSpeed[key] *= Math.abs(sum) < scrollThreshold ? 0 : scrollDecelerate;
+
+            }, INTERVAL);
         }
 
         musicPlaylist.addEventListener('touchstart', (event) => {
@@ -1403,28 +1431,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
             clickStart.clientY = event.touches[index].clientY;
 
             // Scroll interval for executing scrollTo
-            endScroll();
-            scrollHandle = setInterval(() => {
-
-                let vals = Object.values(scrollSpeed);
-                if (vals.length == 0) return;
-
-                const sum = vals.reduce((acc, val) => acc + val, 0);
-
-                if (musicPlaylist.clientHeight < musicPlaylist.scrollHeight) {
-                    musicPlaylist.scrollTo({ top: musicPlaylist.scrollTop + sum });
-                } else {
-                    mainWrap.scrollTo({ top: mainWrap.scrollTop + sum });
-                }
-                
-                // Decelerate
-                for (const key in scrollSpeed)
-                    scrollSpeed[key] *= scrollDecelerate;
-                
-                if (Math.abs(sum) < 0.15) 
-                    endScroll();
-
-            }, INTERVAL);
+            startScroll();
 
             // Border handler
             // handling when dragging of li reaches the border of screen
@@ -1498,6 +1505,8 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
                 const delta = touchmoveLastY[event.pointerId]-event.clientY;
                 scrollSpeed[event.pointerId] = delta;
+
+                startScroll();
 
             }
 

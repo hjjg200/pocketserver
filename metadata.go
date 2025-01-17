@@ -33,8 +33,7 @@ type metadataCache struct {
 	body			MetadataBody
 	bodyMu			sync.Mutex
 	detailsWg		sync.WaitGroup
-	changed			bool
-	changedDetails	bool
+	detailsMu		sync.Mutex
 	json			[]byte
 	dir				string
 
@@ -92,7 +91,9 @@ func (cache *metadataCache) updateJson() {
 func (cache *metadataCache) get(cached bool) ([]byte) {
 	
 	if cached == false {
+		cache.detailsMu.Lock() // Use mutex to prevent racing of waiting Wait
 		cache.detailsWg.Wait()
+		cache.detailsMu.Unlock()
 	}
 
 	cache.bodyMu.Lock()
@@ -302,10 +303,12 @@ func (cache *metadataCache) _update() {
 	cache.bodyMu.Unlock()
 
 	go func() {
+		cache.detailsMu.Lock()
 		cache.detailsWg.Wait()
 		cache.bodyMu.Lock()
 		cache.updateJson()
 		cache.bodyMu.Unlock()
+		cache.detailsMu.Unlock()
 	}()
 
 }
@@ -313,18 +316,17 @@ func (cache *metadataCache) _update() {
 func (mgr *MetadataManager) UpdateDir(dir string) error {
 
 	mgr.cacheMapMu.RLock()
-	defer mgr.cacheMapMu.RUnlock()
 
 	cache, ok := mgr.cacheMap[dir]
 	if !ok {
+		mgr.cacheMapMu.RUnlock()
 		return fmt.Errorf("Not found")
 	}
+	mgr.cacheMapMu.RUnlock()
 
-	 go func() {
-		mgr.updateMu.Lock()
-		cache.update()
-		mgr.updateMu.Unlock()
-	 }()
+	mgr.updateMu.Lock()
+	cache.update()
+	mgr.updateMu.Unlock()
 
 	 return nil
 

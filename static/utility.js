@@ -267,7 +267,7 @@ function base64ToUtf8(base64) {
         },
         {
             root: null, // Observe relative to the viewport
-            rootMargin: '11rem', // Trigger when 100px away from the viewport
+            rootMargin: '0', // Trigger when 100px away from the viewport
             threshold: 0 // Trigger when 10% of the element is visible
         });
     });
