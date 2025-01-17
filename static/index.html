@@ -160,7 +160,6 @@
     background: url(/static/default_artwork.svg);
     background-size: cover;
     width: 100%;
-    background: #eee;
     aspect-ratio: 1/1;
     display: flex;
     align-items: center;
@@ -1188,7 +1187,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         let candidateLi;
         const INTERVAL = 10; // interval for tracking pointermove event
         let scrollHandle; // interval handle
-        const scrollDecelerate = Math.pow(0.011, 1/(1000/INTERVAL));
+        const scrollDecelerate = Math.pow(0.93, 1/(10/INTERVAL));
 
         // Function to handle the long press event
         let longpressHandle;
@@ -1422,7 +1421,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
                 for (const key in scrollSpeed)
                     scrollSpeed[key] *= scrollDecelerate;
                 
-                if (Math.abs(sum) < 0.3) 
+                if (Math.abs(sum) < 0.15) 
                     endScroll();
 
             }, INTERVAL);
