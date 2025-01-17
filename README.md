@@ -24,9 +24,9 @@ A simple server built for use on iSH, an emulated linux on iOS.
 - requires ffmpeg `apk add ffmpeg` on iSH will install it
 - when iSH put **completely background** using `cat /dev/location &` it appears that it is turned off in 15 minutes; when locked while iSH is on the screen, tested maximum is 7 hours
 - placing your own `mime.types` in `/etc/mime.types` is recommended; refer to [static/mime.types](./static/mime.types)
-- ffmpeg is run using `popen` because I got invalid operation error
+- ffmpeg is run using `popen` because I got invalid operation error using exec.Cmd.Run
 - using HTTP is recommended for better throughput
-- calling repeated ReadDir on mounted icloud drive causes crash
+- calling repeated ReadDir on mounted icloud drive causes freeze
 
 ## Features
 
