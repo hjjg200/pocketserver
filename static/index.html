@@ -497,6 +497,7 @@ input#cache-album {
     <script src="/static/utility.js"></script>
     <script>
 
+
 const DEFAULT_ARTWORK = "/static/default_artwork.svg";
 const PLACEHOLDER_IMAGE = "/static/placeholder.svg";
 
@@ -740,7 +741,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
         //
         container.update = (meta) => {
-            const details = meta.details;
+            const details = meta.details || {};
 
             details.title = details.title || basename;
             details.artist = details.artist || "-";
@@ -976,18 +977,20 @@ const mainWrap = document.body.querySelector(".main-wrap");
             updateMediaSessionPosition();
         },
         nexttrack: async () => {
-            const index = gPlaylist.indexOf(gAudioCurrentBase);
-            const nextIndex = (index + 1) % gPlaylist.length;
-            await changeMusic(gPlaylist[nextIndex]);
+            const shuffled = shuffleArray(gPlaylist, gAudioSeed);
+            const index = shuffled.indexOf(gAudioCurrentBase);
+            const nextIndex = (index + 1) % shuffled.length;
+            await changeMusic(shuffled[nextIndex]);
         },
         previoustrack: async () => {
             if (gAudio.currentTime > 3.0) {
                 gAudio.currentTime = 0;
                 await mediaActionHandlers['play']();
             } else {
-                const index = gPlaylist.indexOf(gAudioCurrentBase);
-                const prevIndex = (index - 1 + gPlaylist.length) % gPlaylist.length;
-                await changeMusic(gPlaylist[prevIndex]);
+                const shuffled = shuffleArray(gPlaylist, gAudioSeed);
+                const index = shuffled.indexOf(gAudioCurrentBase);
+                const prevIndex = (index - 1 + shuffled.length) % shuffled.length;
+                await changeMusic(shuffled[prevIndex]);
             }
         },
     };
@@ -1026,6 +1029,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
             }
         }
 
+        // TODO when paused, file upload causes focusing of current music
         // Restore session
         if (gAudio.paused) {
             const audioInfoJson = localStorage.getItem(LC_AUDIO_JSON);
@@ -1057,11 +1061,9 @@ const mainWrap = document.body.querySelector(".main-wrap");
     musicPlayerShuffleButton.addEventListener("click", () => {
         if (musicPlayerShuffleButton.classList.contains("on")) {
             gAudioSeed = null;
-            gPlaylist = gMetadataBody.playlist;
             musicPlayerShuffleButton.classList.remove("on");
         } else {
             gAudioSeed = Math.floor(Date.now());
-            gPlaylist = shuffleArray(gPlaylist, gAudioSeed);
             musicPlayerShuffleButton.classList.add("on");
         }
 
@@ -1074,20 +1076,18 @@ const mainWrap = document.body.querySelector(".main-wrap");
     });
     
     window.changeMusic = async function (base) {
-
+        
         if (base === null) {
             gAudioCurrentBase = null;
             
+            await mediaActionHandlers["pause"]();
             gAudio.removeAttribute("src");
-            const pause = mediaActionHandlers["pause"]();
 
             if ('mediaSession' in navigator)
                 navigator.mediaSession.metadata = null;
             
             musicPlayerArtContainer.querySelectorAll("img").forEach(img => img.removeAttribute("src"));
             updateMusicArtBackground();
-            
-            await pause;
 
             return;
         }
@@ -1099,14 +1099,20 @@ const mainWrap = document.body.querySelector(".main-wrap");
         musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
         updateMusicArtBackground();
 
-        gAudio.src = src;
+        await mediaActionHandlers["pause"]();
+        gAudio.src = await normalizeAndBlobAudio(src, -15);
         const { details } = gMetadataBody.metaMap[base];
         if (details.title === "") {
             details.title = base;
         }
         updateMediaSessionMetadata(details.title, details.artist, details.album, thumb);
         
-        //
+        // DOMs
+        if (musicPlaylist.classList.contains("edit")) {
+            musicPlaylist.classList.remove("edit");
+            ensureLiVisibility(mainWrap, musicPlaylist);
+        }
+
         const li0 = musicPlaylist.querySelector(".playing");
         if (li0) li0.classList.remove("playing");
 
@@ -1256,6 +1262,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         let longpressHandle;
         let longpressStart;
         const longpressDuration = 750;
+        let startLis;
         function handleLongPress(event) {
 
             endScroll();
@@ -1266,6 +1273,9 @@ const mainWrap = document.body.querySelector(".main-wrap");
             if (targetLi) {
 
                 dragPointerId = event.pointerId;
+
+                //
+                startLis = musicPlaylist.querySelectorAll('.music-playlist-li');
 
                 const liRect = targetLi.getBoundingClientRect();
 
@@ -1296,37 +1306,30 @@ const mainWrap = document.body.querySelector(".main-wrap");
             }
         }
 
-        
-        const swapLi = throttle(200, (li0, li1) => {
-            const item1 = li0;
-            const item2 = li1;
+        const swapLi = throttle(100, (target, candiate) => {
 
-            if (!item1 || !item2) {
-                console.error("One or both items not found.");
-                return;
+            if (target === candiate) return;
+
+            const targetNext = target.nextSibling;
+
+            for(const each of startLis) {
+                if (each === candiate) {
+                    if (candiate === targetNext) {
+                        musicPlaylist.appendChild(candiate);
+                        musicPlaylist.appendChild(target);
+                    } else {
+                        musicPlaylist.appendChild(target);
+                        musicPlaylist.appendChild(candiate);
+                    }
+                }
+                else if (each === target) {
+                    
+                }
+                else {
+                    musicPlaylist.appendChild(each);
+                }
             }
 
-            const parent = item1.parentNode;
-
-            // Swap items by inserting each item in the position of the other
-            const item1Next = item1.nextSibling; // Save reference to item1's next sibling
-            const item2Next = item2.nextSibling; // Save reference to item2's next sibling
-
-            // Reinsert item2 at item1's position
-            if (item1Next === item2) {
-                // If item2 is directly after item1, insert item2 before item1
-                parent.insertBefore(item2, item1);
-            } else {
-                parent.insertBefore(item2, item1Next);
-            }
-
-            // Reinsert item1 at item2's position
-            if (item2Next === item1) {
-                // If item1 is directly after item2, insert item1 before item2
-                parent.insertBefore(item1, item2);
-            } else {
-                parent.insertBefore(item1, item2Next);
-            }
         });
 
         function handleDragMove(event, touch) {
@@ -1346,7 +1349,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         }
 
         function getClosestLi(clientY) {
-            const items = musicPlaylist.querySelectorAll('.music-playlist-li'); // Get all items in the container
+            const items = startLis; // Get all items in the container
             let closest = null;
             let minDistance = Infinity;
 
@@ -1371,10 +1374,9 @@ const mainWrap = document.body.querySelector(".main-wrap");
         const editPlaylist = throttle(5000, () => {
                         
             const url = buildURL("/editPlaylist", {[QUERY_ALBUM]: gAlbum});
-
             fetch(url, {
                 method: 'POST',
-                body: JSON.stringify(gPlaylist),
+                body: JSON.stringify(gPlaylist), 
             })
                 .catch(error => console.error('Edit playlist error:', error));
             
@@ -1406,6 +1408,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         }
 
         musicPlaylist.addEventListener("click", event => {
+            return;
             if (draggedWrap) return;
 
             const targetLi = event.target.closest('.music-playlist-li');

@@ -303,7 +303,7 @@ func (cache *metadataCache) _update() {
 	cache.bodyMu.Unlock()
 
 	go func() {
-		cache.detailsMu.Lock()
+		cache.detailsMu.Lock() // TODO fix
 		cache.detailsWg.Wait()
 		cache.bodyMu.Lock()
 		cache.updateJson()
