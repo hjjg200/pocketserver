@@ -27,7 +27,6 @@ import "C"
 import (
 	"syscall"
 	"unsafe"
-	"runtime"
 )
 
 //go:linkname pollAcceptFunc internal/poll.AcceptFunc

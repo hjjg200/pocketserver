@@ -623,16 +623,7 @@ func main() {
 	}
 
 	// IP
-	piface, addrMap, err := getLocalAddresses()
-	must(err)
-	for iface, addrs := range addrMap {
-		logDebug(iface, addrs)
-	}
-	intiface, err := getInternetInterface()
-	if err != nil {
-		piface = intiface
-	}
-	gAppInfo.LocalIPs = addrMap[piface]
+	gAppInfo.LocalIPs = resolveLocalIPs()
 
 	// MUX
 	mux := http.NewServeMux()
@@ -680,8 +671,12 @@ func main() {
 
 	// Start the server
 	logInfo("SERVER STARTED AT", now.Format(time.RFC3339), fmt.Sprint("(", time.Now().Sub(now),")"))
-	logInfo("http://[::1]")
+	logInfo()
+	logInfo("http://[::1]   (recommended)")
 	for _, ipStr := range gAppInfo.LocalIPs {
+		if ipStr == "127.0.0.1" || ipStr == "::1" {
+			continue
+		}
 		if isIPv4(ipStr) {
 			logInfo("https://" + ipStr)
 		} else {

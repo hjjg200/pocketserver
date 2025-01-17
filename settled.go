@@ -252,7 +252,7 @@ var gAuthInfo AuthInfo
 type HTTPInfo struct {
 	Enabled				bool
 	EnablerRemoteIP		string
-	InterfaceHash		string
+	AddressesHash		string
 }
 var gHTTPInfo HTTPInfo
 
@@ -277,14 +277,13 @@ func authMiddleware(next http.Handler) http.Handler {
 		// Set HTTP info for later checkups
 		gHTTPInfo.EnablerRemoteIP = raddr
 
-		_, addrMap, err := getLocalAddresses()
+		addrs := resolveLocalIPs()
 		if err != nil {
 			logHTTPRequest(r, -1, "handleEnableHTTP getLocalAddresses", err)
 			http.Error(w, "Error getting address", http.StatusInternalServerError)
 			return
 		}
-		ifaceHash := generateInterfaceHash(addrMap)
-		gHTTPInfo.InterfaceHash = ifaceHash
+		gHTTPInfo.AddressesHash = generateAddressesHash(addrs)
 
 		// Enable HTTP
 		gHTTPInfo.Enabled = true
@@ -507,15 +506,10 @@ func httpFilterMiddleware(next http.Handler) http.Handler {
 		http.Redirect(w, r, target, http.StatusFound)
 	}
 
-	ifaceHash := ""
-	ifaceChecker := throttle(func() {
-		_, addrMap, err := getLocalAddresses()
-		if err != nil {
-			logError("Failed to get interface information", err)
-			ifaceHash = ""
-			return
-		}
-		ifaceHash = generateInterfaceHash(addrMap)
+	addrsHash := ""
+	addrsChecker := throttle(func() {
+		addrs := resolveLocalIPs()
+		addrsHash = generateAddressesHash(addrs)
 	}, time.Second * 30)
 
 	return http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {
@@ -542,10 +536,10 @@ func httpFilterMiddleware(next http.Handler) http.Handler {
 				return
 			}
 
-			ifaceChecker()
-			if ifaceHash == "" || ifaceHash != gHTTPInfo.InterfaceHash {
+			addrsChecker()
+			if addrsHash == "" || addrsHash != gHTTPInfo.AddressesHash {
 				gHTTPInfo.Enabled = false
-				logHTTPRequest(r, -1, "HTTP is disabled, interface hash mismatch", gHTTPInfo.InterfaceHash, ifaceHash)
+				logHTTPRequest(r, -1, "HTTP is disabled, interface hash mismatch", gHTTPInfo.AddressesHash, addrsHash)
 				redirectToHTTPS(w, r)
 				return
 			}

@@ -155,9 +155,9 @@ func generateSelfSignedCert(root *rootCACertificate, certPath, keyPath string, a
 
 		// Issued certificates only
 		template.DNSNames		= []string{"localhost"} // Add localhost as a valid domain
-		template.IPAddresses	= []net.IP{
-			net.ParseIP("127.0.0.1"),	// Add 127.0.0.1 as a valid IP
-			net.ParseIP("::1")}			// Add ::1
+		template.IPAddresses	= []net.IP{}
+			//net.ParseIP("127.0.0.1"),	// Add 127.0.0.1 as a valid IP
+			//net.ParseIP("::1")}			// Add ::1
 
 		for _, addr := range addrs {
 			if ip := net.ParseIP(addr); ip != nil {
@@ -425,12 +425,61 @@ func isIPv4(address string) bool {
 	return ip != nil && ip.To4() != nil
 }
 
+// Simulated function to resolve well-known IPs and return unique local addresses
+func resolveLocalIPs() ([]string) {
+	var testedIPs = []net.IP{
+		net.IPv4bcast,                 // IPv4 limited broadcast
+		net.IPv4allsys,               // IPv4 all systems
+		net.IPv4allrouter,            // IPv4 all routers
+		net.IPv4zero,                 // IPv4 all zeros
+		net.IPv6zero,                 // IPv6 all zeros
+		net.IPv6unspecified,          // IPv6 unspecified
+		net.IPv6loopback,             // IPv6 loopback
+		net.IPv6interfacelocalallnodes, // IPv6 interface-local all nodes
+		net.IPv6linklocalallnodes,    // IPv6 link-local all nodes
+		net.IPv6linklocalallrouters,  // IPv6 link-local all routers
+	}
+
+	uniqueIPs := make(map[string]struct{}) // Map to track unique local IPs
+	for _, ip := range testedIPs {
+		udpAddr := &net.UDPAddr{IP: ip, Port: 9}
+		conn, err := net.DialUDP("udp", nil, udpAddr)
+		if err != nil {
+			//fmt.Printf("Error connecting to %s: %v\n", ip, err)
+			continue
+		}
+		defer conn.Close()
+
+		localAddr := conn.LocalAddr().(*net.UDPAddr)
+		uniqueIPs[localAddr.IP.String()] = struct{}{}
+	}
+
+	// Convert map keys to a slice
+	result := []string{}
+	for ip := range uniqueIPs {
+		result = append(result, ip)
+	}
+
+	return result
+}
+
+// generateAddressesHash creates a hash based on addresses
+func generateAddressesHash(addresses []string) string {
+	cp := make([]string, len(addresses))
+	copy(cp, addresses)
+	sort.Strings(cp) // Ensure consistent order
+	// Create a hash
+	return getCRC32OfBytes([]byte(strings.Join(cp, ";")))
+}
+
+/*
 func getLocalAddresses() (string, map[string][]string, error) {
 	var addresses = make(map[string][]string)
 	preferredInterface := ""
 
 	// Get a list of all system interfaces
 	interfaces, err := net.Interfaces()
+	logDebug(err)
 	if err != nil {
 		return "", nil, err
 	}
@@ -444,6 +493,7 @@ func getLocalAddresses() (string, map[string][]string, error) {
 
 		// Get a list of addresses for the interface
 		addrs, err := iface.Addrs()
+		logDebug(err)
 		if err != nil {
 			return "", nil, err
 		}
@@ -536,7 +586,7 @@ func getInternetInterface() (string, error) {
 
 	return "", fmt.Errorf("no matching interface found")
 
-}
+}*/
 
 
 // FORMATTING
