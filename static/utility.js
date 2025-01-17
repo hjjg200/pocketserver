@@ -56,6 +56,33 @@ function sumAndRemoveKeys(map, keys) {
     return sum;
 }
 
+function seededRandom(seed) {
+    // A simple seed-based RNG (e.g., Mulberry32)
+    let t = seed;
+    return function () {
+        t += 0x6D2B79F5;
+        let x = Math.imul(t ^ (t >>> 15), t | 1);
+        x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+        return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function shuffleArray(array, seed) {
+    if (seed === null) return array.slice();
+
+    const rng = seededRandom(seed); // Create a seeded random number generator
+    const shuffled = array.slice(); // Clone the array to avoid mutating the original
+
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        // Get a random index based on the seed
+        const j = Math.floor(rng() * (i + 1));
+        // Swap elements i and j
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    return shuffled;
+}
+
 function getQueryParam(key) {
     const params = new URLSearchParams(window.location.search);
     return params.get(key);

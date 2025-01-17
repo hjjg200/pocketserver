@@ -42,9 +42,6 @@ func syscallAnyToSockaddr(rsa *syscall.RawSockaddrAny) (syscall.Sockaddr, error)
 func init() {
 	pollAcceptFunc = Accept
 	pollAccept4Func = Accept4
-
-	// Max 1
-	runtime.GOMAXPROCS(1)
 }
 
 // Replace [internal/poll.AcceptFunc] to fix `accept: function not implemented`

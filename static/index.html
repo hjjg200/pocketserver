@@ -246,6 +246,10 @@
     width: 1.25rem;
     height: 1.25rem;
 }
+.music-player .sub-buttons .button.on {
+    box-shadow: 0 0 0 .15rem #ddd;
+    border-radius: 0.2rem;
+}
 .music-player .sub-buttons .button img {
     height: 100%;
     aspect-ratio: 1/1;
@@ -461,7 +465,7 @@ input#cache-album {
                                     <div class="slider-fill"></div>
                                 </div>
                             </div>
-                            <div class="open-list button"><img src="/static/shuffle.svg" alt=""></div>
+                            <div class="shuffle button"><img src="/static/shuffle.svg" alt=""></div>
                         </div>
                 </div>
                 <ul class="music-playlist">
@@ -533,7 +537,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
     let formatSrc;
 
-    function changeAlbum(album) {
+    async function changeAlbum(album) {
 
         if((album || "") === "") {
             removeQueryParam(QUERY_ALBUM, true);
@@ -546,7 +550,12 @@ const mainWrap = document.body.querySelector(".main-wrap");
         }
 
         gAlbum = album;
-        populate_list();
+        await cleanupList();
+        await cleanupAudio();
+        await populateList();
+        await initializeAudio();
+
+        await populateList(false); // Wait for full update
 
     }
 
@@ -690,7 +699,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
         artContainer.appendChild(art);
         artContainer.addEventListener("click", () => {
-            changeMusic(gPlaylist.indexOf(basename));
+            changeMusic(basename);
         });
 
         const info = createElement("div", "music-info");
@@ -725,7 +734,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         li.appendChild(right);
 
         li.addEventListener("click", () => {
-            changeMusic(gPlaylist.indexOf(basename));
+            changeMusic(basename);
         });
         musicPlaylist.appendChild(li);
 
@@ -772,24 +781,21 @@ const mainWrap = document.body.querySelector(".main-wrap");
     const others = document.querySelector(".others-container");
     const media = document.querySelector(".media-container");
 
-    function cleanupList() {
+    async function cleanupList() {
         Object.values(window.gEntryMap || {}).forEach(el => el.remove());
 
-        window.gMetadataMap = {};
+        window.gMetadataBody = {};
         window.gEntryMap = {};
-
-        cleanupAudio(); // TODO make cleanup process not confusing
 
         albumsList.classList.add("empty");
     }
 
-    window.updateList = function (metaBody1) {
+    window.updateList = async function (metaBody1) {
 
         const metaMap1 = metaBody1.metaMap;
-        const metaMap0 = window.gMetadataMap;
+        const metaMap0 = window.gMetadataBody.metaMap || {};
 
-        window.gMetadataMap = metaMap1;
-        window.gPlaylist = metaBody1.playlist;
+        window.gMetadataBody = metaBody1;
         
         const sortedKeys = Object.keys(metaMap1).sort((a, b) => {
             return new Date(metaMap1[b].modTime) - new Date(metaMap1[a].modTime);
@@ -895,25 +901,19 @@ const mainWrap = document.body.querySelector(".main-wrap");
                 removed.remove();
         }
 
-        // Playlist
-        for (const base of gPlaylist) {
-            const li = musicPlaylist.querySelector(`.music-playlist-li[data-base="${base}"]`);
-            musicPlaylist.appendChild(li);
-        }
-
     }
 
-    window.populate_list = async function () {
+    window.populateList = async function (cached=true) {
 
-        const url = buildURL(URL_LIST, {[QUERY_ALBUM]: gAlbum});
-        const cacheUrl = buildURL(url, {[QUERY_CACHE]: null});
+        let url = buildURL(URL_LIST, {[QUERY_ALBUM]: gAlbum});
+        if (cached) {
+            url = buildURL(url, {[QUERY_CACHE]: null});
+        }
 
-        const cachedResponse  = await fetch(cacheUrl);
-        const metaBody        = await cachedResponse.json();
+        const response = await fetch(url);
+        const metaBody = await response.json();
 
-        cleanupList();
-
-        updateList(metaBody);
+        await updateList(metaBody);
 
         // TODO remove folder count from others
         const numAudio = Object.values(metaBody.metaMap).filter(v => v.mimeCategory === "audio").length;
@@ -923,29 +923,14 @@ const mainWrap = document.body.querySelector(".main-wrap");
         // Adjust music player
         musicPlayerContainer.classList[(numAudio > 0) ? "remove":"add"]("no-songs");
 
-        // DETAILS
-        const response  = await fetch(url);
-        const metaBody2 = await response.json();
+    };
 
-        updateList(metaBody2);
-
-    }
 })();
 
 
 (() => {// Audio
-    window.gPlaylist = [];
-    window.gAudioCurrentIndex = -1;
-    let gAudioShuffle = false;
-    let gAudioLoop = true;
 
-    window.addEventListener("DOMContentLoaded", () => {
-        cleanupAudio();
-    });
-    window.cleanupAudio = function() {
-        musicPlaylist.classList.remove("edit");
-        changeMusic(null);
-    }
+    const LC_AUDIO_JSON = "audioInfo";
 
     window.musicPlaylist = document.querySelector(".music-playlist");
     window.musicPlayerContainer = document.querySelector(".music-player-container");
@@ -955,29 +940,26 @@ const mainWrap = document.body.querySelector(".main-wrap");
     const musicPlayerVolumeContainer = musicPlayer.querySelector(".volume-container");
     const musicPlayerVolumeButton = musicPlayerVolumeContainer.querySelector(".button");
     const musicPlayerVolumeSlider = musicPlayerVolumeContainer.querySelector(".slider");
+    const musicPlayerShuffleButton = musicPlayer.querySelector(".shuffle.button");
 
     const gAudio = document.querySelector(".music-player audio");
-    
-    musicPlayerArtContainer.addEventListener("click", () => {
-        ensureLiVisibility(musicPlaylist, musicPlaylist.querySelector("li.playing"));
-    });
-    musicPlayerVolumeButton.addEventListener("click", () => {
-        musicPlayerVolumeSlider.style.display = "";
-    });
-    document.addEventListener('click', (event) => {
-        if (!musicPlayerVolumeContainer.contains(event.target)) {
-            musicPlayerVolumeSlider.style.display = "none";
-        }
-    });
+
+    window.gPlaylist = [];
+    window.gAudioCurrentBase = null;
+    let gAudioSeed = null;
+
     const mediaActionHandlers = {
         play: async () => {
-            if (gAudioCurrentIndex == -1) {
-                await changeMusic(0);
+            if (gAudioCurrentBase == null) {
+                await changeMusic(gPlaylist[0]);
             }
             await gAudio.play();
             musicPlayer.classList.add("playing");
 
             navigator.mediaSession.playbackState = "playing";
+
+            // Save audio info for later restore
+            storeAudioInfo();
         },
         pause: () => {
             gAudio.pause();
@@ -994,25 +976,107 @@ const mainWrap = document.body.querySelector(".main-wrap");
             updateMediaSessionPosition();
         },
         nexttrack: async () => {
-            const nextIndex = (gAudioCurrentIndex + 1) % gPlaylist.length;
-            gAudioCurrentIndex = nextIndex;
-            await changeMusic(nextIndex);
+            const index = gPlaylist.indexOf(gAudioCurrentBase);
+            const nextIndex = (index + 1) % gPlaylist.length;
+            await changeMusic(gPlaylist[nextIndex]);
         },
         previoustrack: async () => {
             if (gAudio.currentTime > 3.0) {
                 gAudio.currentTime = 0;
                 await mediaActionHandlers['play']();
             } else {
-                const prevIndex = (gAudioCurrentIndex - 1 + gPlaylist.length) % gPlaylist.length;
-                gAudioCurrentIndex = prevIndex;
-                await changeMusic(prevIndex);
+                const index = gPlaylist.indexOf(gAudioCurrentBase);
+                const prevIndex = (index - 1 + gPlaylist.length) % gPlaylist.length;
+                await changeMusic(gPlaylist[prevIndex]);
             }
         },
     };
-    window.changeMusic = async function (index) {
 
-        if (index === null) {
-            gAudioCurrentIndex = -1;
+    window.addEventListener("DOMContentLoaded", () => {
+        cleanupAudio();
+    });
+    window.cleanupAudio = async function() {
+        musicPlaylist.classList.remove("edit");
+        musicPlaylist.scrollTo({ top: 0 });
+        changeMusic(null);
+    }
+    function storeAudioInfo() {
+        const audioInfo = JSON.parse(localStorage.getItem(LC_AUDIO_JSON) || "{}");
+        audioInfo[gAlbum] = { 
+            base: gAudioCurrentBase,
+            seed: gAudioSeed
+        };
+        localStorage.setItem(LC_AUDIO_JSON, JSON.stringify(audioInfo));
+    }
+    window.initializeAudio = async function() {
+
+        window.gPlaylist = gMetadataBody.playlist;
+
+        // Create a map of elements for quick lookup
+        const elementMap = new Map();
+        for (const li of musicPlaylist.querySelectorAll(".music-playlist-li")) {
+            elementMap.set(li.getAttribute("data-base"), li);
+        }
+
+        // Reorder elements in one pass
+        for (const base of gPlaylist) {
+            const li = elementMap.get(base);
+            if (li) {
+                musicPlaylist.appendChild(li);
+            }
+        }
+
+        // Restore session
+        if (gAudio.paused) {
+            const audioInfoJson = localStorage.getItem(LC_AUDIO_JSON);
+            if (audioInfoJson) {
+                const audioInfo = JSON.parse(audioInfoJson);
+                const albumAudioInfo = audioInfo[gAlbum];
+                if (albumAudioInfo) {
+                    gAudioSeed = albumAudioInfo.seed || null;
+
+                    if (gPlaylist.indexOf(albumAudioInfo.base) !== -1) {
+                        await changeMusic(albumAudioInfo.base);
+                        await mediaActionHandlers["pause"]();
+                    }
+                }
+            }
+        }
+
+        //
+        musicPlayerShuffleButton.classList[gAudioSeed !== null ? "add" : "remove"]("on");
+    }
+    
+    // MUSIC PLAYER
+    musicPlayerArtContainer.addEventListener("click", () => {
+        ensureLiVisibility(musicPlaylist, musicPlaylist.querySelector("li.playing"));
+    });
+    musicPlayerVolumeButton.addEventListener("click", () => {
+        musicPlayerVolumeSlider.style.display = "";
+    });
+    musicPlayerShuffleButton.addEventListener("click", () => {
+        if (musicPlayerShuffleButton.classList.contains("on")) {
+            gAudioSeed = null;
+            gPlaylist = gMetadataBody.playlist;
+            musicPlayerShuffleButton.classList.remove("on");
+        } else {
+            gAudioSeed = Math.floor(Date.now());
+            gPlaylist = shuffleArray(gPlaylist, gAudioSeed);
+            musicPlayerShuffleButton.classList.add("on");
+        }
+
+        storeAudioInfo();
+    });
+    document.addEventListener('click', (event) => {
+        if (!musicPlayerVolumeContainer.contains(event.target)) {
+            musicPlayerVolumeSlider.style.display = "none";
+        }
+    });
+    
+    window.changeMusic = async function (base) {
+
+        if (base === null) {
+            gAudioCurrentBase = null;
             
             gAudio.removeAttribute("src");
             const pause = mediaActionHandlers["pause"]();
@@ -1028,18 +1092,17 @@ const mainWrap = document.body.querySelector(".main-wrap");
             return;
         }
 
-        gAudioCurrentIndex = index;
-        const basename = gPlaylist[index];
-        const src   = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: gAlbum});
+        gAudioCurrentBase = base;
+        const src   = buildURL([URL_VIEW, base], {[QUERY_ALBUM]: gAlbum});
         const thumb = buildURL(src, {[QUERY_THUMBNAIL]: null});
 
         musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
         updateMusicArtBackground();
 
         gAudio.src = src;
-        const { details } = gMetadataMap[basename];
+        const { details } = gMetadataBody.metaMap[base];
         if (details.title === "") {
-            details.title = basename;
+            details.title = base;
         }
         updateMediaSessionMetadata(details.title, details.artist, details.album, thumb);
         
@@ -1047,7 +1110,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         const li0 = musicPlaylist.querySelector(".playing");
         if (li0) li0.classList.remove("playing");
 
-        const li1 = musicPlaylist.querySelectorAll("li")[index];
+        const li1 = musicPlaylist.querySelector(`li[data-base="${base}"]`);
         li1.classList.add("playing");
         ensureLiVisibility(musicPlaylist, li1);
 
@@ -1333,12 +1396,9 @@ const mainWrap = document.body.querySelector(".main-wrap");
             setTimeout(() => targetLi.classList.remove("edit-target"), 100);
 
             // Rearrange in gPlaylist
-            const currentBase = gAudioCurrentIndex !== -1 ? gPlaylist[gAudioCurrentIndex] : null;
             window.gPlaylist = Array.from(
                 musicPlaylist.querySelectorAll(".music-playlist-li"))
                 .map(el => el.getAttribute("data-base"));
-
-            if (currentBase) gAudioCurrentIndex = gPlaylist.indexOf(currentBase);
 
             // Send edit
             editPlaylist();
@@ -1617,7 +1677,8 @@ const mainWrap = document.body.querySelector(".main-wrap");
         }
 
         upload_processed = false;
-        populate_list();
+        await populateList(false);
+        await initializeAudio();
 
     }
 

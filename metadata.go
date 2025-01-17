@@ -12,14 +12,14 @@ import (
 )
 
 type Metadata struct {
-	mu sync.Mutex
+	mu				sync.Mutex
 
-	ModTime		time.Time `json:"modTime"`
-	Size		int64     `json:"size"`
-	IsDir		bool      `json:"isDir"`
-	MimeCategory string `json:"mimeCategory"`
+	ModTime			time.Time `json:"modTime"`
+	Size			int64     `json:"size"`
+	IsDir			bool      `json:"isDir"`
+	MimeCategory	string `json:"mimeCategory"`
 	
-	Details   map[string] string `json:"details"`
+	Details			map[string] string `json:"details"`
 }
 type MetadataMap map[string]*Metadata
 type MetadataBody struct {
@@ -28,7 +28,7 @@ type MetadataBody struct {
 }
 
 type metadataCache struct {
-	mgr			*MetadataManager
+	mgr				*MetadataManager
 
 	body			MetadataBody
 	bodyMu			sync.Mutex
@@ -172,7 +172,7 @@ func (mgr *MetadataManager) AddDir(dir string) {
 		body:	body,
 	}
 
-	cache.update = throttleAtomic(cache._update, IO_EACH_CACHE_COOLDOWN)
+	cache.update = throttle(cache._update, IO_EACH_CACHE_COOLDOWN)
 	mgr.cacheMap[dir] = cache
 
 	data, err := os.ReadFile(mgr.formatDirCacheName(dir))

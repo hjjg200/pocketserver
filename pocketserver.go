@@ -410,13 +410,16 @@ type responseWriter struct {
 	http.ResponseWriter
 	r		*http.Request
 	code	int
+	written int64
 }
 
 func (w *responseWriter) Write(p []byte) (int, error) {
 	if w.code == 0 {
 		w.WriteHeader(200)
 	}
-	return w.ResponseWriter.Write(p)
+	n, err := w.ResponseWriter.Write(p)
+	w.written += int64(n)
+	return n, err
 }
 
 func (w *responseWriter) WriteHeader(code int) {
@@ -448,7 +451,7 @@ func performanceMiddlewareFactory(config PerformanceConfig) func(http.Handler) h
 		}
 	}
 
-	checkMemstats := throttleAtomic(func() {
+	checkMemstats := throttle(func() {
 		var memStats runtime.MemStats
 		runtime.ReadMemStats(&memStats)
 
@@ -620,9 +623,11 @@ func main() {
 	}
 
 	// IP
-	logDebug(getLocalAddresses())
 	piface, addrMap, err := getLocalAddresses()
 	must(err)
+	for iface, addrs := range addrMap {
+		logDebug(iface, addrs)
+	}
 	intiface, err := getInternetInterface()
 	if err != nil {
 		piface = intiface
@@ -643,14 +648,18 @@ func main() {
 	//
 	performanceMiddleware := performanceMiddlewareFactory(gPerformanceConfig)
 
-	// Create an HTTPS server
+	// HTTPS :443 mux
 	httpsMux := authMiddleware(mux)
 	httpsMux  = performanceMiddleware(httpsMux)
+
+	// http :80 mux
+	httpMux := httpFilterMiddleware(mux)
+	httpMux  = performanceMiddleware(httpMux)
 
 	// Auth
 	loadAuthCookies()
 
-	ensureTLSCertificate("cert.pem", "key.pem", addrMap[piface])
+	ensureTLSCertificate("cert.pem", "key.pem", gAppInfo.LocalIPs)
 	server := &http.Server{
 		Addr: ":443",
 		Handler: httpsMux,
@@ -662,9 +671,6 @@ func main() {
 
 	// HTTP server
 	go func() {
-		httpMux := httpFilterMiddleware(mux)
-		httpMux  = performanceMiddleware(httpMux)
-
 		for {
 			logError(http.ListenAndServe(":80", httpMux))
 			time.Sleep(time.Second * 10)

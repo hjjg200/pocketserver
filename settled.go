@@ -253,11 +253,16 @@ type HTTPInfo struct {
 	Enabled				bool
 	EnablerRemoteIP		string
 	InterfaceHash		string
-	InterfaceHashMu		sync.Mutex
 }
 var gHTTPInfo HTTPInfo
 
 func authMiddleware(next http.Handler) http.Handler {
+
+	redirectToHTTPIndex := func(w http.ResponseWriter, r *http.Request) {
+		httpURL := fmt.Sprintf("http://%s/", r.Host)
+		logHTTPRequest(r, -1, "to HTTP") // SeeOther is for GET only
+		http.Redirect(w, r, httpURL, http.StatusSeeOther)
+	}
 
 	handleEnableHTTP := func(w http.ResponseWriter, r *http.Request) {
 
@@ -281,19 +286,15 @@ func authMiddleware(next http.Handler) http.Handler {
 		ifaceHash := generateInterfaceHash(addrMap)
 		gHTTPInfo.InterfaceHash = ifaceHash
 
-		// Construct the HTTP URL for redirection
-		httpURL := fmt.Sprintf("http://%s/", r.Host)
-
 		// Enable HTTP
 		gHTTPInfo.Enabled = true
 
 		// Redirect to the HTTP root (/) of the same host
-		logHTTPRequest(r, -1, "HTTP is temporarily enabled")
-		http.Redirect(w, r, httpURL, http.StatusSeeOther)
+		redirectToHTTPIndex(w, r)
 
 	}
 
-	// Debounce storing cookies for 3 seconds
+	// Debounce storing cookies for 10 seconds
 	fileUpdater := debounce(func() {
 		
 		gAuthInfo.ExpiryMapMu.Lock()
@@ -305,11 +306,25 @@ func authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-	}, time.Second * 3)
+	}, time.Second * 10)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		now := time.Now()
+
+		// Remote addr
+		raddr, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			logHTTPRequest(r, -1, "ListenAndServe net.SplitHostPort err:", err)
+			http.Error(w, "Error getting address", http.StatusBadRequest)
+			return
+		}
+
+		// Localhost privilege
+		if raddr == "127.0.0.1" || raddr == "::1" {
+			redirectToHTTPIndex(w, r)
+			return
+		}
 
 		// Check for existing cookie
 		cookie, err := r.Cookie(AUTH_COOKIE_NAME)
@@ -493,7 +508,7 @@ func httpFilterMiddleware(next http.Handler) http.Handler {
 	}
 
 	ifaceHash := ""
-	ifaceChecker := throttleAtomic(func() {
+	ifaceChecker := throttle(func() {
 		_, addrMap, err := getLocalAddresses()
 		if err != nil {
 			logError("Failed to get interface information", err)
@@ -501,7 +516,7 @@ func httpFilterMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		ifaceHash = generateInterfaceHash(addrMap)
-	}, time.Second * 10)
+	}, time.Second * 30)
 
 	return http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {
 
@@ -527,7 +542,6 @@ func httpFilterMiddleware(next http.Handler) http.Handler {
 				return
 			}
 
-			_t := logTime()
 			ifaceChecker()
 			if ifaceHash == "" || ifaceHash != gHTTPInfo.InterfaceHash {
 				gHTTPInfo.Enabled = false
@@ -535,7 +549,6 @@ func httpFilterMiddleware(next http.Handler) http.Handler {
 				redirectToHTTPS(w, r)
 				return
 			}
-			logTime(_t)
 				
 			// Handle temporaryily disabled https
 			next.ServeHTTP(w, r)

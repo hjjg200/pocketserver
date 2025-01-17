@@ -345,8 +345,35 @@ func validateCertificate(cert *x509.Certificate, addrs []string) error {
 
 }
 
+// formatBytes converts bytes into a human-readable string with at most 3 significant digits,
+// using early exits for specific thresholds.
+func formatBytes(bytes int64) string {
+	if bytes == 0 {
+		return "0 B"
+	}
 
-func throttleAtomic(fn func(), delay time.Duration) func() {
+	const k = int64(1024)
+
+	// Early exits for specific thresholds
+	if bytes < k {
+		return fmt.Sprintf("%d %s", bytes, "B") // Bytes
+	}
+	if bytes < k*k {
+		return fmt.Sprintf("%.3g %s", float64(bytes)/float64(k), "KB") // KB
+	}
+	if bytes < k*k*k {
+		return fmt.Sprintf("%.3g %s", float64(bytes)/float64(k*k), "MB") // MB
+	}
+	if bytes < k*k*k*k {
+		return fmt.Sprintf("%.3g %s", float64(bytes)/float64(k*k*k), "GB") // GB
+	}
+
+	// Default for TB and beyond
+	return fmt.Sprintf("%.3g %s", float64(bytes)/float64(k*k*k*k), "TB") // TB
+}
+
+
+func throttle(fn func(), delay time.Duration) func() {
 	
 	if delay == 0 {
 		return fn

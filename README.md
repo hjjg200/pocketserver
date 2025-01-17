@@ -35,6 +35,7 @@ sudo ln -s /usr/local/musl-1.2.5-i686/bin/musl-gcc /usr/local/bin/i686-linux-mus
 
 ## TODO
 
+- remember last playlist index
 - playlist shuffle and loop single song
 - sub-playlist under album
 - Create album, rename album
