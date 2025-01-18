@@ -35,7 +35,7 @@ sudo ln -s /usr/local/musl-1.2.5-i686/bin/musl-gcc /usr/local/bin/i686-linux-mus
 
 ## Safari specific notes
 
-- Pausing <audio> is done by `audio.playbackRate = 0` otherwise, blob-url audios show unexpected behavior regarding media session API
+- Pausing \<audio\> is done by `audio.playbackRate = 0` otherwise, blob-url audios show unexpected behavior regarding media session API
 
 
 ## TODO
