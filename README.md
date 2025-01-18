@@ -35,11 +35,13 @@ sudo ln -s /usr/local/musl-1.2.5-i686/bin/musl-gcc /usr/local/bin/i686-linux-mus
 
 ## TODO
 
+- On iphone safari, accessing via `http://[::1]` somehow makes decoding of audio fail. It works perfectly fine on `http://127.0.0.1`
 - playlist loop single song
 - sub-playlist under album
 - Create album, rename album
 - remove metadata of removed files
 - paste to upload for iOS safari
+
 
 ### Memo
 

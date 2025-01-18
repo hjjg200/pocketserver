@@ -44,4 +44,4 @@ image/png				png
 
 audio/mpeg				mp3
 audio/mp4				m4a
-audio/ogg               opus
+#audio/ogg               opus # works using decodeAudioData on ipad but not on iphone

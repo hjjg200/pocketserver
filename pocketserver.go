@@ -672,7 +672,7 @@ func main() {
 	// Start the server
 	logInfo("SERVER STARTED AT", now.Format(time.RFC3339), fmt.Sprint("(", time.Now().Sub(now),")"))
 	logInfo()
-	logInfo("http://[::1]   (recommended)")
+	logInfo("http://127.0.0.1   (recommended)")
 	for _, ipStr := range gAppInfo.LocalIPs {
 		if ipStr == "127.0.0.1" || ipStr == "::1" {
 			continue

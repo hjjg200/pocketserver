@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,6 +31,17 @@ var gAppInfo AppInfo
 
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {
+	if gAppInfo.Debug {
+		d, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			logDebug(err)
+			return
+		}
+		if len(d) == 0 {
+			return
+		}
+		logHTTPRequest(r, -1, string(d))
+	}
 	fmt.Fprint(w, "imageserverpong")
 }
 

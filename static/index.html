@@ -495,6 +495,7 @@ input#cache-album {
     </body>
     <script src="/static/crc32.js"></script>
     <script src="/static/utility.js"></script>
+    <script src="/static/soundcheck.js"></script>
     <script>
 
 
@@ -949,6 +950,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
     window.gPlaylist = [];
     window.gAudioCurrentBase = null;
     let gAudioSeed = null;
+    let gMutablePlaylist = null;
 
     let audioRetryHandle;
 
@@ -980,20 +982,20 @@ const mainWrap = document.body.querySelector(".main-wrap");
             updateMediaSessionPosition();
         },
         nexttrack: async () => {
-            const shuffled = shuffleArray(gPlaylist, gAudioSeed);
-            const index = shuffled.indexOf(gAudioCurrentBase);
-            const nextIndex = (index + 1) % shuffled.length;
-            await changeMusic(shuffled[nextIndex]);
+            const playlist = gMutablePlaylist;
+            const index = playlist.indexOf(gAudioCurrentBase);
+            const nextIndex = (index + 1) % playlist.length;
+            await changeMusic(playlist[nextIndex]);
         },
         previoustrack: async () => {
             if (gAudio.currentTime > 3.0) {
                 gAudio.currentTime = 0;
                 await mediaActionHandlers['play']();
             } else {
-                const shuffled = shuffleArray(gPlaylist, gAudioSeed);
-                const index = shuffled.indexOf(gAudioCurrentBase);
-                const prevIndex = (index - 1 + shuffled.length) % shuffled.length;
-                await changeMusic(shuffled[prevIndex]);
+                const playlist = gMutablePlaylist;
+                const index = playlist.indexOf(gAudioCurrentBase);
+                const prevIndex = (index - 1 + playlist.length) % playlist.length;
+                await changeMusic(playlist[prevIndex]);
             }
         },
     };
@@ -1041,6 +1043,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
                 const albumAudioInfo = audioInfo[gAlbum];
                 if (albumAudioInfo) {
                     gAudioSeed = albumAudioInfo.seed || null;
+                    gMutablePlaylist = shuffleArray(gPlaylist, gAudioSeed);
 
                     if (gPlaylist.indexOf(albumAudioInfo.base) !== -1) {
                         await changeMusic(albumAudioInfo.base);
@@ -1069,6 +1072,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
             gAudioSeed = Math.floor(Date.now());
             musicPlayerShuffleButton.classList.add("on");
         }
+        gMutablePlaylist = shuffleArray(gPlaylist, gAudioSeed);
 
         storeAudioInfo();
     });
@@ -1118,18 +1122,20 @@ const mainWrap = document.body.querySelector(".main-wrap");
             URL.revokeObjectURL(oldSrc);
         }
 
+        //
+        const { details } = gMetadataBody.metaMap[base];
+        if (details.title === "") {
+            details.title = base;
+        }
+
         // Create blob and play
         clearInterval(audioRetryHandle);
         audioRetryHandle = createRetryInterval(async () => {
-                
+
             musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
             updateMusicArtBackground();
 
             await mediaActionHandlers["pause"]();
-            const { details } = gMetadataBody.metaMap[base];
-            if (details.title === "") {
-                details.title = base;
-            }
 
             gAudio.src = await normalizeAndBlobAudio(src, gAudioSoundCheckDB);
 
