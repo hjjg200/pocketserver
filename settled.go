@@ -32,6 +32,9 @@ var gAppInfo AppInfo
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 	if gAppInfo.Debug {
+
+		w.Header().Set("X-Debug", "true")
+
 		d, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			logDebug(err)
@@ -40,7 +43,19 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		if len(d) == 0 {
 			return
 		}
-		logHTTPRequest(r, -1, string(d))
+
+		var args []string
+		err = json.Unmarshal(d, &args)
+		if err != nil {
+			logDebug(err)
+			return
+		}
+		cl := "[console.log] "
+		if r.Header.Get("X-Debug") == "error" {
+			cl = LOG_RED + "[console.error] "
+		}
+		logHTTPRequest(r, -1, fmt.Sprintf("\n%s%s%s", cl, strings.Join(args, "\n"), LOG_RESET))
+
 	}
 	fmt.Fprint(w, "imageserverpong")
 }

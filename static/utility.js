@@ -110,6 +110,7 @@ function createRetryInterval(callback, interval) {
                     reject(new DOMException("Aborted", "AbortError")); // Reject if aborted
                 } else {
                     // Schedule the next retry after the interval
+                    console.error(error);
                     handle = setTimeout(attempt, interval);
                 }
             } finally {
@@ -133,34 +134,6 @@ function createRetryInterval(callback, interval) {
 }
 
 
-
-
-function createAwaitableInterval(callback, interval) {
-    let intervalId;
-    let isRunning = false;
-
-    const start = () => {
-        intervalId = setInterval(async () => {
-            isRunning = true;
-            try {
-                await callback(); // Await the callback if it's asynchronous
-            } finally {
-                isRunning = false;
-            }
-        }, interval);
-    };
-
-    const stop = async () => {
-        clearInterval(intervalId);
-
-        // Wait until the running interval function completes
-        while (isRunning) {
-            await new Promise((resolve) => setTimeout(resolve, 10)); // Poll every 10ms
-        }
-    };
-
-    return { start, stop };
-}
 
 
 

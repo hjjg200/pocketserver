@@ -511,6 +511,7 @@ const URL_LIST = "/list";
 
 
 const TYPES_MEDIA = ["image", "video", "audio"];
+let gDEBUG = false;
 
 document.addEventListener("DOMContentLoaded", () => {
     checkServer();
@@ -958,11 +959,14 @@ const mainWrap = document.body.querySelector(".main-wrap");
         play: async () => {
             if (gAudioCurrentBase == null) {
                 await changeMusic(gPlaylist[0]);
+                return;
             }
             await gAudio.play();
             musicPlayer.classList.add("playing");
 
             navigator.mediaSession.playbackState = "playing";
+
+            updateMediaSessionPosition();
 
             // Save audio info for later restore
             storeAudioInfo();
@@ -1127,6 +1131,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         if (details.title === "") {
             details.title = base;
         }
+        updateMediaSessionMetadata(details.title, details.artist, details.album, thumb);
 
         // Create blob and play
         clearInterval(audioRetryHandle);
@@ -1144,10 +1149,9 @@ const mainWrap = document.body.querySelector(".main-wrap");
         try {
             await audioRetryHandle.promise;
             await mediaActionHandlers["play"]();
-            updateMediaSessionMetadata(details.title, details.artist, details.album, thumb);
-            updateMediaSessionPosition();
         } catch(err) {
             console.error("Failed to play", src, err);
+            return;
         }
 
     }
@@ -1869,8 +1873,9 @@ const mainWrap = document.body.querySelector(".main-wrap");
     window.checkServer = throttle(2000.0, async function () {
 
         fetch('/ping') // prevent recursive
-            .then(() => {
+            .then(response => {
                 serverInfoContainer.classList.remove("error");
+                gDEBUG = response.headers.has("X-Debug");
             })
             .catch(err => {
                 serverInfoContainer.classList.add("error");
@@ -1918,6 +1923,34 @@ const mainWrap = document.body.querySelector(".main-wrap");
 })();
 
 (() => { // Utility functions that aren't independant
+
+    const originalConsoleError = console.error;
+    console.error = function (...args) {
+        args = args.map(arg => {
+            if (arg instanceof Error) {
+                return `${arg.stack || "No stack"} - ${arg.message}`;
+            }
+            return arg;
+        });
+        originalConsoleError.call(console, ...args);
+        if (gDEBUG) {
+            fetch("/ping", {
+                method: "POST",
+                headers: {"X-Debug": "error"},
+                body: JSON.stringify(args)
+            })
+        }
+    };
+    const originalConsoleLog = console.log;
+    console.log = function (...args) {
+        originalConsoleLog.call(console, ...args);
+        if (gDEBUG) {
+            fetch("/ping", {
+                method: "POST",
+                body: JSON.stringify(args.map(String))
+            })
+        }
+    };
 
 })();
 
