@@ -442,8 +442,6 @@ input#cache-album {
                         <img class="album-art"></img>
                     </div>
                     <div class="buttons">
-                        <audio style="display: none;">
-                        </audio>
                         <div class="prev button"><img src="/static/prevtrack.svg" alt=""></div>
                         <div class="play-pause">
                             <div class="play button"><img src="/static/play.svg" alt=""></div>
@@ -703,6 +701,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         artContainer.appendChild(art);
         artContainer.addEventListener("click", () => {
             changeMusic(basename);
+            gAudio.play();
         });
 
         const info = createElement("div", "music-info");
@@ -738,6 +737,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
         li.addEventListener("click", () => {
             changeMusic(basename);
+            gAudio.play();
         });
         musicPlaylist.appendChild(li);
 
@@ -945,7 +945,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
     const musicPlayerVolumeSlider = musicPlayerVolumeContainer.querySelector(".slider");
     const musicPlayerShuffleButton = musicPlayer.querySelector(".shuffle.button");
 
-    const gAudio = document.querySelector(".music-player audio");
+    window.gAudio = document.createElement('audio');
     const gAudioSoundCheckDB = -17;
 
     window.gPlaylist = [];
@@ -957,25 +957,10 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
     const mediaActionHandlers = {
         play: async () => {
-            if (gAudioCurrentBase == null) {
-                await changeMusic(gPlaylist[0]);
-                return;
-            }
             await gAudio.play();
-            musicPlayer.classList.add("playing");
-
-            navigator.mediaSession.playbackState = "playing";
-
-            updateMediaSessionPosition();
-
-            // Save audio info for later restore
-            storeAudioInfo();
         },
         pause: () => {
             gAudio.pause();
-            musicPlayer.classList.remove("playing");
-
-            navigator.mediaSession.playbackState = "paused";
         },
         seekbackward: null,
         seekforward: null,
@@ -990,6 +975,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
             const index = playlist.indexOf(gAudioCurrentBase);
             const nextIndex = (index + 1) % playlist.length;
             await changeMusic(playlist[nextIndex]);
+            gAudio.play();
         },
         previoustrack: async () => {
             if (gAudio.currentTime > 3.0) {
@@ -1000,9 +986,30 @@ const mainWrap = document.body.querySelector(".main-wrap");
                 const index = playlist.indexOf(gAudioCurrentBase);
                 const prevIndex = (index - 1 + playlist.length) % playlist.length;
                 await changeMusic(playlist[prevIndex]);
+                gAudio.play();
             }
         },
     };
+
+    gAudio.addEventListener('play', function() {
+        navigator.mediaSession.playbackState = 'playing';
+        musicPlayer.classList.add("playing");
+
+        // Save audio info for later restore
+        storeAudioInfo();
+    });
+    gAudio.addEventListener('pause', function() {
+        navigator.mediaSession.playbackState = 'paused';
+        musicPlayer.classList.remove("playing");
+    });
+    gAudio.addEventListener("ended", mediaActionHandlers["nexttrack"]);
+    gAudio.addEventListener('playing', function() {
+        if ('mediaSession' in navigator) {
+            for (const [action, handler] of Object.entries(mediaActionHandlers)) {
+                navigator.mediaSession.setActionHandler(action, handler);
+            }
+        }
+    });
 
     window.addEventListener("DOMContentLoaded", () => {
         cleanupAudio();
@@ -1045,14 +1052,16 @@ const mainWrap = document.body.querySelector(".main-wrap");
             if (audioInfoJson) {
                 const audioInfo = JSON.parse(audioInfoJson);
                 const albumAudioInfo = audioInfo[gAlbum];
-                if (albumAudioInfo) {
+                if (albumAudioInfo && gPlaylist.length > 0) {
                     gAudioSeed = albumAudioInfo.seed || null;
                     gMutablePlaylist = shuffleArray(gPlaylist, gAudioSeed);
 
                     if (gPlaylist.indexOf(albumAudioInfo.base) !== -1) {
-                        await changeMusic(albumAudioInfo.base);
-                        await mediaActionHandlers["pause"]();
+                        gAudioCurrentBase = albumAudioInfo.base;
+                    } else {
+                        gAudioCurrentBase = gPlaylist[0];
                     }
+                    changeMusic(gAudioCurrentBase);
                 }
             }
         }
@@ -1126,13 +1135,6 @@ const mainWrap = document.body.querySelector(".main-wrap");
             URL.revokeObjectURL(oldSrc);
         }
 
-        //
-        const { details } = gMetadataBody.metaMap[base];
-        if (details.title === "") {
-            details.title = base;
-        }
-        updateMediaSessionMetadata(details.title, details.artist, details.album, thumb);
-
         // Create blob and play
         clearInterval(audioRetryHandle);
         audioRetryHandle = createRetryInterval(async () => {
@@ -1140,24 +1142,20 @@ const mainWrap = document.body.querySelector(".main-wrap");
             musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
             updateMusicArtBackground();
 
-            await mediaActionHandlers["pause"]();
-
-            gAudio.src = await normalizeAndBlobAudio(src, gAudioSoundCheckDB);
+            gAudio.src = src;//await normalizeAndBlobAudio(src, gAudioSoundCheckDB);
+            
+            updateMediaSessionMetadata();
 
         }, 5000);
 
         try {
             await audioRetryHandle.promise;
-            await mediaActionHandlers["play"]();
         } catch(err) {
             console.error("Failed to play", src, err);
             return;
         }
 
     }
-
-    gAudio.addEventListener("ended", mediaActionHandlers["nexttrack"]);
-    gAudio.addEventListener('playing', setupMediaSessionControls);
 
     createSlider(musicPlayerVolumeSlider, 0.5, true, volume => {
         gAudio.volume = volume;
@@ -1192,8 +1190,13 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
     function updateMediaSessionPosition() {
         if ('mediaSession' in navigator) {
+            
+            const meta = gMetadataBody.metaMap[gAudioCurrentBase];
+            if (!meta) return;
+            const { details } = meta;
+            
             navigator.mediaSession.setPositionState({
-                duration: gAudio.duration || 0,
+                duration: gAudio.duration || durationToSeconds(details.duration),
                 playbackRate: gAudio.playbackRate,
                 position: gAudio.currentTime
             });
@@ -1247,19 +1250,35 @@ const mainWrap = document.body.querySelector(".main-wrap");
         };
 
     }
-    function updateMediaSessionMetadata(title, artist, album, artworkUrl) {
+    function updateMediaSessionMetadata() {
         if ('mediaSession' in navigator) {
+
+            const meta = gMetadataBody.metaMap[gAudioCurrentBase];
+
+            if (!meta) return;
+
+            //
+            const { details } = meta;
+            if (details.title === "") {
+                details.title = gAudioCurrentBase;
+            }
+
+            const title = details.title;
+            const artist = details.artist;
+            const album = details.album;
+            const src   = buildURL([URL_VIEW, gAudioCurrentBase], {[QUERY_ALBUM]: gAlbum});
+            const thumb = buildURL(src, {[QUERY_THUMBNAIL]: null});
 
             // Prevent video from interrupting media session metadata
             document.querySelectorAll('video').forEach(element => element.remove());
 
             let artwork = [
-                {src: artworkUrl, sizes: "96x96", type: "image/jpg",},
-                {src: artworkUrl, sizes: "128x128", type: "image/jpg",},
-                {src: artworkUrl, sizes: "192x192", type: "image/jpg",},
-                {src: artworkUrl, sizes: "256x256", type: "image/jpg",},
-                {src: artworkUrl, sizes: "384x384", type: "image/jpg",},
-                {src: artworkUrl, sizes: "512x512", type: "image/jpg",},
+                {src: thumb, sizes: "96x96", type: "image/jpeg",},
+                {src: thumb, sizes: "128x128", type: "image/jpeg",},
+                {src: thumb, sizes: "192x192", type: "image/jpeg",},
+                {src: thumb, sizes: "256x256", type: "image/jpeg",},
+                {src: thumb, sizes: "384x384", type: "image/jpeg",},
+                {src: thumb, sizes: "512x512", type: "image/jpeg",},
             ];
 
             navigator.mediaSession.metadata = new MediaMetadata({
@@ -1269,15 +1288,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
                 artwork: artwork,
             });
         }
-    }
-
-    // MediaSession API handlers
-    async function setupMediaSessionControls() {
-        if ('mediaSession' in navigator) {
-            for (const [action, handler] of Object.entries(mediaActionHandlers)) {
-                navigator.mediaSession.setActionHandler(action, handler);
-            }
-        }
+        updateMediaSessionPosition();
     }
 
     // Playlist editing

@@ -312,6 +312,21 @@ function formatDuration(durationString) {
     }
 }
 
+function durationToSeconds(duration) {
+    if (duration.length !== 11) return 0;
+    // Split the time string into components
+    const [hours, minutes, seconds] = duration.split(":");
+    const [wholeSeconds, milliseconds] = seconds.split(".");
+
+    // Calculate total seconds
+    return (
+        parseInt(hours, 10) * 3600 +
+        parseInt(minutes, 10) * 60 +
+        parseInt(wholeSeconds, 10) +
+        parseFloat(`0.${milliseconds}`)
+    );
+}
+
 async function fetchJSON(url) {
     try {
         const response = await fetch(url);
