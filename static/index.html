@@ -961,6 +961,9 @@ const mainWrap = document.body.querySelector(".main-wrap");
                 await changeMusic(gPlaylist[0]);
                 return;
             }
+            if (gAudio.playbackRate === 0)
+                gAudio.playbackRate = 1;
+
             await gAudio.play();
             musicPlayer.classList.add("playing");
 
@@ -969,12 +972,16 @@ const mainWrap = document.body.querySelector(".main-wrap");
             // Save audio info for later restore
             storeAudioInfo();
         },
-        pause: () => {
-            gAudio.pause();
+        pause: async () => {
+            //gAudio.pause();
+            // On iOS safari, pausing somehow revokes access to the created blob audio
+            //  resulting in no control over the media using media buttons
+            gAudio.playbackRate = 0;
             musicPlayer.classList.remove("playing");
 
             navigator.mediaSession.playbackState = "paused";
         },
+        stop: null,
         seekbackward: null,
         seekforward: null,
         seekto: (details) => {
@@ -1118,13 +1125,9 @@ const mainWrap = document.body.querySelector(".main-wrap");
         li1.classList.add("playing");
         ensureLiVisibility(musicPlaylist, li1);
 
-        // Revoke old blob
-        const oldSrc = gAudio.src;
-        if (oldSrc && oldSrc.startsWith("blob:")) {
-            URL.revokeObjectURL(oldSrc);
-        }
-
         //
+        await mediaActionHandlers["pause"]();
+        
         const { details } = gMetadataBody.metaMap[base];
         if (details.title === "") {
             details.title = base;
@@ -1138,9 +1141,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
             musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
             updateMusicArtBackground();
 
-            await mediaActionHandlers["pause"]();
-
-            gAudio.src = src;//await normalizeAndBlobAudio(src, gAudioSoundCheckDB);
+            gAudio.src = await normalizeAndBlobAudio(src, gAudioSoundCheckDB);
 
         }, 5000);
 
@@ -1155,7 +1156,14 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
     }
 
-    gAudio.addEventListener("ended", mediaActionHandlers["nexttrack"]);
+    gAudio.addEventListener("ended", () => {
+        // Revoke old blob
+        const oldSrc = gAudio.src;
+        if (false && oldSrc && oldSrc.startsWith("blob:")) {
+            URL.revokeObjectURL(oldSrc);
+        }
+        mediaActionHandlers["nexttrack"]();
+    });
     gAudio.addEventListener('playing', setupMediaSessionControls);
 
     createSlider(musicPlayerVolumeSlider, 0.5, true, volume => {
@@ -1182,7 +1190,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
     gAudioPrevButton.addEventListener("click", mediaActionHandlers["previoustrack"]);
     gAudioNextButton.addEventListener("click", mediaActionHandlers["nexttrack"]);
     gAudioPlayPauseButton.addEventListener("click", async () => {
-        if(gAudio.paused) {
+        if(gAudio.playbackRate === 0) {
             await mediaActionHandlers["play"]();
         } else {
             mediaActionHandlers["pause"]();
