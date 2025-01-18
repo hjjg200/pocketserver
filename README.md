@@ -35,13 +35,11 @@ sudo ln -s /usr/local/musl-1.2.5-i686/bin/musl-gcc /usr/local/bin/i686-linux-mus
 
 ## TODO
 
-- sound check
 - playlist loop single song
 - sub-playlist under album
 - Create album, rename album
 - remove metadata of removed files
 - paste to upload for iOS safari
-- fix when playing stops after uploading
 
 ### Memo
 

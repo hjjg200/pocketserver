@@ -944,10 +944,13 @@ const mainWrap = document.body.querySelector(".main-wrap");
     const musicPlayerShuffleButton = musicPlayer.querySelector(".shuffle.button");
 
     const gAudio = document.querySelector(".music-player audio");
+    const gAudioSoundCheckDB = -17;
 
     window.gPlaylist = [];
     window.gAudioCurrentBase = null;
     let gAudioSeed = null;
+
+    let audioRetryHandle;
 
     const mediaActionHandlers = {
         play: async () => {
@@ -1095,17 +1098,6 @@ const mainWrap = document.body.querySelector(".main-wrap");
         gAudioCurrentBase = base;
         const src   = buildURL([URL_VIEW, base], {[QUERY_ALBUM]: gAlbum});
         const thumb = buildURL(src, {[QUERY_THUMBNAIL]: null});
-
-        musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
-        updateMusicArtBackground();
-
-        await mediaActionHandlers["pause"]();
-        gAudio.src = await normalizeAndBlobAudio(src, -15);
-        const { details } = gMetadataBody.metaMap[base];
-        if (details.title === "") {
-            details.title = base;
-        }
-        updateMediaSessionMetadata(details.title, details.artist, details.album, thumb);
         
         // DOMs
         if (musicPlaylist.classList.contains("edit")) {
@@ -1120,8 +1112,37 @@ const mainWrap = document.body.querySelector(".main-wrap");
         li1.classList.add("playing");
         ensureLiVisibility(musicPlaylist, li1);
 
-        await mediaActionHandlers["play"]();
-        updateMediaSessionPosition();
+        // Revoke old blob
+        const oldSrc = gAudio.src;
+        if (oldSrc && oldSrc.startsWith("blob:")) {
+            URL.revokeObjectURL(oldSrc);
+        }
+
+        // Create blob and play
+        clearInterval(audioRetryHandle);
+        audioRetryHandle = createRetryInterval(async () => {
+                
+            musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
+            updateMusicArtBackground();
+
+            await mediaActionHandlers["pause"]();
+            const { details } = gMetadataBody.metaMap[base];
+            if (details.title === "") {
+                details.title = base;
+            }
+
+            gAudio.src = await normalizeAndBlobAudio(src, gAudioSoundCheckDB);
+
+        }, 5000);
+
+        try {
+            await audioRetryHandle.promise;
+            await mediaActionHandlers["play"]();
+            updateMediaSessionMetadata(details.title, details.artist, details.album, thumb);
+            updateMediaSessionPosition();
+        } catch(err) {
+            console.error("Failed to play", src, err);
+        }
 
     }
 
@@ -1842,10 +1863,11 @@ const mainWrap = document.body.querySelector(".main-wrap");
     window.checkServer = throttle(2000.0, async function () {
 
         fetch('/ping') // prevent recursive
+            .then(() => {
+                serverInfoContainer.classList.remove("error");
+            })
             .catch(err => {
                 serverInfoContainer.classList.add("error");
-                console.error('Error during checking memstats:', err);
-                clearInterval(checkServerHandle);
             });
 
     });

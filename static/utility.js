@@ -83,6 +83,90 @@ function shuffleArray(array, seed) {
     return shuffled;
 }
 
+async function clearRetryInterval(handle) {
+    if (handle) {
+        await handle.abort();
+    }
+}
+
+function createRetryInterval(callback, interval) {
+    const controller = new AbortController(); // Create an AbortController
+    const { signal } = controller; // Extract the signal for cancellation
+
+    let running = false; // Track if the callback is running
+    let handle; // Timeout handle
+
+    const promise = new Promise((resolve, reject) => {
+        const attempt = async () => {
+            if (running || signal.aborted) return; // Skip if already running or aborted
+
+            running = true;
+            try {
+                const result = await callback(signal); // Pass the signal to the callback
+                resolve(result); // Resolve the promise on success
+                clearTimeout(handle); // Stop further timeouts
+            } catch (error) {
+                if (signal.aborted) {
+                    reject(new DOMException("Aborted", "AbortError")); // Reject if aborted
+                } else {
+                    // Schedule the next retry after the interval
+                    handle = setTimeout(attempt, interval);
+                }
+            } finally {
+                running = false;
+            }
+        };
+
+        // Start the first attempt immediately
+        handle = setTimeout(attempt, 0);
+    });
+
+    const abort = async () => {
+        controller.abort(); // Abort the signal
+        clearTimeout(handle); // Stop the timeout
+        while (running) {
+            await new Promise((resolve) => setTimeout(resolve, 10)); // Wait for the current callback to finish
+        }
+    };
+
+    return { promise, abort };
+}
+
+
+
+
+function createAwaitableInterval(callback, interval) {
+    let intervalId;
+    let isRunning = false;
+
+    const start = () => {
+        intervalId = setInterval(async () => {
+            isRunning = true;
+            try {
+                await callback(); // Await the callback if it's asynchronous
+            } finally {
+                isRunning = false;
+            }
+        }, interval);
+    };
+
+    const stop = async () => {
+        clearInterval(intervalId);
+
+        // Wait until the running interval function completes
+        while (isRunning) {
+            await new Promise((resolve) => setTimeout(resolve, 10)); // Poll every 10ms
+        }
+    };
+
+    return { start, stop };
+}
+
+
+
+
+
+
 async function loadAudio(audioContext, url) {
     const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
@@ -134,10 +218,10 @@ async function normalizeAudio(/*audioContext,*/ audioBuffer, targetDb) {
 
     source.start(0);
     const normalizedBuffer = await offlineContext.startRendering();
-    console.log(offlineContext, audioBuffer);
     return normalizedBuffer;
 }
 
+// This makes opus playable on iOS safari
 async function normalizeAndBlobAudio(url, targetDb) {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const audioBuffer = await loadAudio(audioContext, url);
