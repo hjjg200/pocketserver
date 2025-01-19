@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"io/ioutil"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -661,7 +662,40 @@ func staticHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+
 func populateEmbedEtags() {
+	gEmbedStaticEtags = make(map[string]string)
+
+	// WalkDir for traversing the embedded directory recursively
+	err := fs.WalkDir(gEmbedStatic, "static", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("failed to access path %s: %w", path, err)
+		}
+
+		// Skip directories
+		if d.IsDir() {
+			return nil
+		}
+
+		// Read file content
+		data, err := gEmbedStatic.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("error reading file %s: %w", path, err)
+		}
+
+		// Compute and store ETag
+		etag := fmt.Sprintf("\"%x\"", getCRC32OfBytes(data))
+		gEmbedStaticEtags[path] = etag
+		return nil
+	})
+
+	if err != nil {
+		logFatal(fmt.Errorf("failed to populate embedded ETags: %w", err))
+	}
+}
+
+
+func populateEmbedEtags2() {
 
 	gEmbedStaticEtags = make(map[string]string)
 
