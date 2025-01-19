@@ -542,7 +542,7 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log("Received from server:", event.data);
 
         // Example: Parse and process server response
-        const args = event.data.split("Arguments: ")[1];
+        const args = JSON.parse(event.data);
         if (args) {
             console.log("Processing arguments:", args);
         }

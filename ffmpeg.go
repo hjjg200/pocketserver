@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"flag"
 	"net"
 	"os"
+	"encoding/json"
 	"path/filepath"
 	"net/http"
 	"strings"
@@ -18,13 +20,97 @@ const FFMPEG_PREFIX = "[FFmpeg]"
 func initFFmpeg() {
 	// Check if the program is invoked as "ffmpeg" or the main app
 	if filepath.Base(os.Args[0]) == "ffmpeg2" && len(os.Args) > 1 {
-		subFFmpeg(os.Args[1:])
+		subFFmpeg(os.Args)
 		logInfo(FFMPEG_PREFIX, "Packet sent to main worker")
 		os.Exit(0)
 	} else {
 		ffmpegHandler = makeFFmpegHandler()
 	}
 }
+
+
+
+
+type FFmpegArgs struct {
+	Inputs	[]int		`json:"inputs"`
+	Output	int			`json:"output"`
+	Args 	[]string	`json:"args"`
+}
+
+// parseFFmpegArgs parses ffmpeg-style arguments and returns indexes for inputs and output.
+func parseFFmpegArgs(args []string) (*FFmpegArgs, error) {
+	// Initialize variables for input and output indexes
+	var inputIndexes []int
+	outputIndex := -1
+
+	// Custom flag parsing
+	fs := flag.NewFlagSet("ffmpeg", flag.ContinueOnError)
+	outputPtr := fs.String("o", "", "Output file (optional)")
+
+	// Parse all flags to allow for `-o` or similar custom flags
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+
+	// Loop over remaining args to find `-i` flags and the output file
+	remainingArgs := fs.Args()
+	for i := 0; i < len(remainingArgs); i++ {
+		if remainingArgs[i] == "-i" {
+			if i+1 >= len(remainingArgs) {
+				return nil, fmt.Errorf("missing input file after -i")
+			}
+			inputIndexes = append(inputIndexes, i+1)
+			i++ // Skip the next argument (input file)
+		} else if strings.HasPrefix(remainingArgs[i], "-") {
+			// Skip flags
+			continue
+		} else {
+			// Assume the last non-flag argument is the output file if not set by `-o`
+			outputIndex = i
+		}
+	}
+
+	// If `-o` is used, it takes precedence for the output file
+	if *outputPtr != "" {
+		for idx, arg := range args {
+			if arg == *outputPtr {
+				outputIndex = idx
+				break
+			}
+		}
+	}
+
+	// Validate parsed inputs and output
+	if len(inputIndexes) == 0 {
+		return nil, fmt.Errorf("no input files provided")
+	}
+	if outputIndex == -1 {
+		return nil, fmt.Errorf("no output file provided")
+	}
+
+	return &FFmpegArgs{
+		Inputs:	inputIndexes,
+		Output:	outputIndex,
+		Args:	args,
+	}, nil
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 var ffmpegHandler func(w http.ResponseWriter, r *http.Request)
 
@@ -68,14 +154,14 @@ func makeFFmpegHandler() http.HandlerFunc {
 				// Read input from the subordinate
 				scanner := bufio.NewScanner(conn)
 				for scanner.Scan() {
-					args := scanner.Text()
-					logInfo(FFMPEG_PREFIX, "Received arguments:", args)
+					ffargsJson := scanner.Text()
+					logDebug(FFMPEG_PREFIX, "Received json of arguments:", ffargsJson)
 
 					logDebug(FFMPEG_PREFIX, "Sending to channel")
-					ch <-args
+					ch <-ffargsJson
 			
 					// Simulate processing the arguments
-					response := fmt.Sprintf("Processed command: %s", args)
+					response := fmt.Sprintf("Processed command: %s", ffargsJson)
 					logInfo(FFMPEG_PREFIX, "Sending response:", response)
 			
 					// Write response back to the subordinate
@@ -124,11 +210,10 @@ func makeFFmpegHandler() http.HandlerFunc {
             if line == "ready" {
                 logDebug(FFMPEG_PREFIX, "Browser is ready")
                 // Wait for an "args" string from the channel
-                args := <-ch
-                response := fmt.Sprintf("Arguments: %v", args)
+                argsJson := <-ch
 
                 // Send back to the browser
-                err = wsConn.WriteMessage(msgType, []byte(response))
+                err = wsConn.WriteMessage(msgType, []byte(argsJson))
                 if err != nil {
                     logError(FFMPEG_PREFIX, "Write error:", err)
                     return
@@ -154,9 +239,17 @@ func subFFmpeg(args []string) {
 	defer conn.Close()
 
 	// Send arguments to the main worker
-	command := strings.Join(args, " ")
-	fmt.Fprintln(conn, command)
-	logInfo(FFMPEG_PREFIX, "Sent arguments:", command)
+	ffargs, err := parseFFmpegArgs(args)
+	if err != nil {
+		logFatal(FFMPEG_PREFIX, "Parse argument error:", err)
+	}
+
+	ffargsJson, err := json.Marshal(ffargs)
+	if err != nil {
+		logFatal(FFMPEG_PREFIX, "Failed to marshal json", err)
+	}
+	fmt.Fprintln(conn, string(ffargsJson))
+	logInfo(FFMPEG_PREFIX, "Sent arguments:", string(ffargsJson))
 
 	// Read response from the main worker
 	scanner := bufio.NewScanner(conn)

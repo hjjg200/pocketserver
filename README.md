@@ -49,7 +49,8 @@ sudo ln -s /usr/local/musl-1.2.5-i686/bin/musl-gcc /usr/local/bin/i686-linux-mus
     - music sound check using transcoding instead of javascript wav method
     - music sound check run once during upload time if transcoding drains much battery
     - metadata extraction during upload time
-    - 
+    - ...
+- log functions fix argument handling
 - playlist loop single song
 - sub-playlist under album
 - Create album, rename album
