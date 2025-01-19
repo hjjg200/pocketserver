@@ -335,17 +335,104 @@ var FFFSType;
   FFFSType2["PROXYFS"] = "PROXYFS";
 })(FFFSType || (FFFSType = {}));
 
+// node_modules/@ffmpeg/util/dist/esm/errors.js
+var ERROR_RESPONSE_BODY_READER = new Error("failed to get response body reader");
+var ERROR_INCOMPLETED_DOWNLOAD = new Error("failed to complete download");
+
+// node_modules/@ffmpeg/util/dist/esm/index.js
+var readFromBlobOrFile = (blob) => new Promise((resolve, reject) => {
+  const fileReader = new FileReader();
+  fileReader.onload = () => {
+    const { result } = fileReader;
+    if (result instanceof ArrayBuffer) {
+      resolve(new Uint8Array(result));
+    } else {
+      resolve(new Uint8Array());
+    }
+  };
+  fileReader.onerror = (event) => {
+    var _a, _b;
+    reject(Error(`File could not be read! Code=${((_b = (_a = event == null ? void 0 : event.target) == null ? void 0 : _a.error) == null ? void 0 : _b.code) || -1}`));
+  };
+  fileReader.readAsArrayBuffer(blob);
+});
+var fetchFile = async (file) => {
+  let data;
+  if (typeof file === "string") {
+    if (/data:_data\/([a-zA-Z]*);base64,([^"]*)/.test(file)) {
+      data = atob(file.split(",")[1]).split("").map((c) => c.charCodeAt(0));
+    } else {
+      data = await (await fetch(file)).arrayBuffer();
+    }
+  } else if (file instanceof URL) {
+    data = await (await fetch(file)).arrayBuffer();
+  } else if (file instanceof File || file instanceof Blob) {
+    data = await readFromBlobOrFile(file);
+  } else {
+    return new Uint8Array();
+  }
+  return new Uint8Array(data);
+};
+
 // src/ffmpeg.js
-console.log("A");
-window.loadTest = async () => {
-  const ffmpeg = new FFmpeg();
-  await ffmpeg.load({
-    corePath: "/static/ffmpeg/ffmpeg-core.js",
-    classWorkerURL: "/static/ffmpeg/worker.js"
+var ffmpeg = new FFmpeg();
+ffmpeg.on("log", (log) => {
+  console.log("[FFmpeg Log]:", log.message);
+});
+ffmpeg.on("progress", (progress) => {
+  console.log("[Progress]:", progress);
+});
+async function transcodeVideo(file) {
+  try {
+    console.log("Loading FFmpeg...");
+    await ffmpeg.load({
+      corePath: "/static/ffmpeg/ffmpeg-core.js",
+      classWorkerURL: "/static/ffmpeg/worker.js"
+    });
+    console.log("FFmpeg loaded!");
+    const inputFileName = "input.mp4";
+    const outputFileName = "output.mp4";
+    console.log("Reading file...");
+    const inputData = await fetchFile(file);
+    console.log("Writing input file...");
+    await ffmpeg.writeFile(inputFileName, inputData);
+    console.log("Running FFmpeg...");
+    await ffmpeg.exec(["-i", inputFileName, "-c:v", "libx264", "-preset", "fast", outputFileName]);
+    console.log("Reading output file...");
+    const outputData = await ffmpeg.readFile(outputFileName);
+    const videoBlob = new Blob([outputData], { type: "video/mp4" });
+    const videoUrl = URL.createObjectURL(videoBlob);
+    const video = document.createElement("video");
+    video.src = videoUrl;
+    video.controls = true;
+    document.body.insertBefore(video, document.body.firstChild);
+    console.log("Transcoding complete!");
+  } catch (error) {
+    console.error("Error during transcoding:", error);
+    console.log(`Error: ${error.message}`);
+  }
+}
+function createDOM() {
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.id = "video-input";
+  fileInput.accept = "video/*";
+  fileInput.style.display = "block";
+  fileInput.style.marginBottom = "10px";
+  const logContainer = document.createElement("div");
+  logContainer.id = "log-container";
+  logContainer.style.border = "1px solid #ccc";
+  logContainer.style.padding = "10px";
+  logContainer.style.maxHeight = "200px";
+  logContainer.style.overflowY = "auto";
+  logContainer.style.marginBottom = "10px";
+  document.body.insertBefore(fileInput, document.body.firstChild);
+  document.body.insertBefore(logContainer, document.body.firstChild);
+  fileInput.addEventListener("change", (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      transcodeVideo(file);
+    }
   });
-  console.log("B");
-};
-var ffmpeg_default = { FFmpeg };
-export {
-  ffmpeg_default as default
-};
+}
+createDOM();
