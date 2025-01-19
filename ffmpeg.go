@@ -6,6 +6,7 @@ import (
 	"flag"
 	"net"
 	"os"
+	"io"
 	"encoding/json"
 	"path/filepath"
 	"net/http"
@@ -32,6 +33,7 @@ func initFFmpeg() {
 
 
 type FFmpegArgs struct {
+	Cwd		string		`json:"cwd"`
 	Inputs	[]int		`json:"inputs"`
 	Output	int			`json:"output"`
 	Args 	[]string	`json:"args"`
@@ -39,6 +41,13 @@ type FFmpegArgs struct {
 
 // parseFFmpegArgs parses ffmpeg-style arguments and returns indexes for inputs and output.
 func parseFFmpegArgs(args []string) (*FFmpegArgs, error) {
+
+	// Get cwd
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("Error getting current working directory: %v", err)
+	}
+
 	// Initialize variables for input and output indexes
 	var inputIndexes []int
 	outputIndex := -1
@@ -89,6 +98,7 @@ func parseFFmpegArgs(args []string) (*FFmpegArgs, error) {
 	}
 
 	return &FFmpegArgs{
+		Cwd:	cwd,
 		Inputs:	inputIndexes,
 		Output:	outputIndex,
 		Args:	args,
@@ -198,8 +208,10 @@ func makeFFmpegHandler() http.HandlerFunc {
 
         // Read messages in a loop from the browser
         for {
+			// TODO error handling for the browser side
+
             // msgType will be websocket.TextMessage or Binary, etc.
-            msgType, msg, err := wsConn.ReadMessage()
+            _, msg, err := wsConn.ReadMessage()
             if err != nil {
                 logError(FFMPEG_PREFIX, "Websocket read error:", err)
                 return
@@ -210,17 +222,116 @@ func makeFFmpegHandler() http.HandlerFunc {
             if line == "ready" {
                 logDebug(FFMPEG_PREFIX, "Browser is ready")
                 // Wait for an "args" string from the channel
-                argsJson := <-ch
+                ffargsJson := <-ch
+
+				// Parse json for processing on this end
+				var ffargs FFmpegArgs
+				if err = json.Unmarshal([]byte(ffargsJson), &ffargs); err != nil {
+					logError(FFMPEG_PREFIX, "FFmpeg args json error:", err)
+					return
+				}
+
+				// Check files
+				if ffargs.Output == -1 || len(ffargs.Inputs) == 0 {
+					logError(FFMPEG_PREFIX, "Malformed ffmpeg args:", ffargs)
+					return
+				}
 
                 // Send back to the browser
-                err = wsConn.WriteMessage(msgType, []byte(argsJson))
+                err = wsConn.WriteMessage(websocket.TextMessage, []byte(ffargsJson))
                 if err != nil {
                     logError(FFMPEG_PREFIX, "Write error:", err)
                     return
                 }
+				
+				// Write inputs to the wasm end
+				if err = processFFmpegInputs(wsConn, ffargs); err != nil {
+					logError(FFMPEG_PREFIX, "Failed to write input files to websocket:", err)
+					return
+				}
+
+				// Write output
+				outPath := formatFFmpegArgPath(ffargs, ffargs.Output)
+				out, err := os.Create(outPath)
+				if err != nil {
+					logError(FFMPEG_PREFIX, "Failed to create output file:", outPath, "err:", err)
+					return
+				}
+				defer out.Close()
+
+				// Copy all data from the WebSocket connection to the file
+				msgType, wsRd, err := wsConn.NextReader()
+				if err != nil {
+					logError(FFMPEG_PREFIX, "Failed to make websocket reader:", err)
+					return
+				}
+				if msgType != websocket.BinaryMessage {
+					logError(FFMPEG_PREFIX, "Malformed data type from websocket:", msgType)
+					return
+				}
+				n, err := io.Copy(out, wsRd)
+				if err != nil {
+					logError(FFMPEG_PREFIX, "Failed to read and write to output:", outPath, "err:", err)
+					return
+				}
+				logDebug(FFMPEG_PREFIX, "Successfully", formatBytes(n), "written as output:", outPath)
             }
         }
     }
+}
+
+
+func formatFFmpegArgPath(ffargs FFmpegArgs, i int) string {
+	p := ffargs.Args[i]
+	if filepath.IsAbs(p) == false {
+		p = filepath.Join(ffargs.Cwd, p)
+	}
+	return p
+}
+
+func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
+
+	for _, inputIndex := range ffargs.Inputs {
+
+		// Stat file
+		inPath := formatFFmpegArgPath(ffargs, inputIndex)
+		info, err := os.Stat(inPath)
+		if err != nil {
+			return fmt.Errorf("Failed to stat input %s: %w", inPath, err)
+		}
+
+		// Write the current input's index
+		infoJson, err := json.Marshal([]int64{
+			int64(inputIndex), info.Size(),
+		})
+		if err != nil {
+			return fmt.Errorf("Failed to marshal: %w", err)
+		}
+		err = wsConn.WriteMessage(websocket.TextMessage, infoJson)
+		if err != nil {
+			return fmt.Errorf("Failed to write to websocket [1]: %w", err)
+		}
+
+		// Stream input file
+		in, err := os.Open(inPath)
+		if err != nil {
+			return fmt.Errorf("Failed to open input file %s: %w", inPath, err)
+		}
+		defer in.Close()
+		wsWr, err := wsConn.NextWriter(websocket.BinaryMessage)
+		if err != nil {
+			return fmt.Errorf("Failed to create writer: %w", err)
+		}
+		n, err := io.Copy(wsWr, in)
+		if err != nil {
+			return fmt.Errorf("Failed to write to websocket [2]: %w", err)
+		}
+		logDebug(FFMPEG_PREFIX, inPath, formatBytes(n), "written to websocket")
+
+	}
+
+	return nil
+
 }
 
 
