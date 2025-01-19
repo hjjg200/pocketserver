@@ -9,6 +9,8 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"bufio"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -411,6 +413,7 @@ type responseWriter struct {
 	r		*http.Request
 	code	int
 	written int64
+	brief	string // Head of written message for error logging
 }
 
 func (w *responseWriter) Write(p []byte) (int, error) {
@@ -419,12 +422,32 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 	}
 	n, err := w.ResponseWriter.Write(p)
 	w.written += int64(n)
+
+	// Store the first part of message for logging http.Error
+	left := 256 - len(w.brief)
+	if left > 0 {
+		if len(p) < left {
+			left = len(p)
+		}
+		w.brief += string(p[:left])
+	}
+
 	return n, err
 }
 
 func (w *responseWriter) WriteHeader(code int) {
 	w.code = code
 	w.ResponseWriter.WriteHeader(code)
+}
+
+// Ensure responseWriter implements http.Hijacker if the underlying ResponseWriter supports it
+func (w *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	// Check if the underlying ResponseWriter supports the http.Hijacker interface
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("underlying ResponseWriter does not support http.Hijacker")
+	}
+	return hijacker.Hijack()
 }
 
 func performanceMiddlewareFactory(config PerformanceConfig) func(http.Handler) http.Handler {
@@ -527,8 +550,11 @@ func performanceMiddlewareFactory(config PerformanceConfig) func(http.Handler) h
 			next.ServeHTTP(w, r)
 			if w.code == 0 {
 				w.WriteHeader(200)
+			} else if w.code >= 400 {
+				logHTTPRequest(r, w.code, w.brief)
+			} else {
+				logHTTPRequest(r, w.code)
 			}
-			logHTTPRequest(r, w.code)
 
 			// Measure the time spent
 			elapsed := time.Since(start).Nanoseconds()
@@ -583,6 +609,10 @@ func main() {
 	now := time.Now()
 	gAppInfo.Start = now
 
+	// Determine if it is the main worker
+	initFFmpeg()
+
+	// Flags
 	parseFlag()
 
 	// Path
@@ -635,6 +665,8 @@ func main() {
 	mux.HandleFunc("/list", listHandler)
 	mux.HandleFunc("/editPlaylist", editPlaylistHandler)
 	mux.HandleFunc("/signout", signoutHandler)
+	// MUX - WebSockets
+	mux.HandleFunc("/ws/ffmpeg", ffmpegHandler)
 
 	//
 	performanceMiddleware := performanceMiddlewareFactory(gPerformanceConfig)

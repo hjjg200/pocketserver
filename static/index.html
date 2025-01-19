@@ -517,6 +517,57 @@ document.addEventListener("DOMContentLoaded", () => {
     checkServer();
 });
 
+
+(() => {
+
+    // FFmpeg websocket
+    // WebSocket URL (adjust based on your server)
+    const wsProtocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+    const wsUrl = `${wsProtocol}${window.location.host}/ws/ffmpeg`;
+
+    // Open a WebSocket connection
+    const socket = new WebSocket(wsUrl);
+
+    // Connection opened
+    socket.addEventListener("open", () => {
+        console.log("WebSocket connection established");
+
+        // Send "ready" message to indicate the browser is ready for processing
+        socket.send("ready\n");
+        console.log("Sent: ready");
+    });
+
+    // Listen for messages from the server
+    socket.addEventListener("message", (event) => {
+        console.log("Received from server:", event.data);
+
+        // Example: Parse and process server response
+        const args = event.data.split("Arguments: ")[1];
+        if (args) {
+            console.log("Processing arguments:", args);
+        }
+    });
+
+    // Handle errors
+    socket.addEventListener("error", (error) => {
+        console.error("WebSocket error:", error);
+    });
+
+    // Handle connection closure
+    socket.addEventListener("close", (event) => {
+        console.log("WebSocket connection closed:", event);
+    });
+
+
+})();
+
+
+
+
+
+
+
+
 // Uses mainWrap instead of window when doing scrollTo
 // because the very same operation behaved unexpectedly when run on
 // window in iOS safari

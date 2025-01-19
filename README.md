@@ -36,11 +36,20 @@ sudo ln -s /usr/local/musl-1.2.5-i686/bin/musl-gcc /usr/local/bin/i686-linux-mus
 ## Safari specific notes
 
 - Pausing \<audio\> is done by `audio.playbackRate = 0` otherwise, blob-url audios show unexpected behavior regarding media session API
+    - TODO Use ffmpeg to sound check music at upload time so no more need to use runtime sound check and blob url
+- On iphone safari, accessing via `http://[::1]` somehow makes decoding of audio fail. It works perfectly fine on `http://127.0.0.1`
+    - Might be related with blob url handling
 
 
 ## TODO
 
-- On iphone safari, accessing via `http://[::1]` somehow makes decoding of audio fail. It works perfectly fine on `http://127.0.0.1`
+- FFmpeg.wasm (decent speed on iOS safari compared to when run on iSH)
+    - if possible, tunnel input output and use iOS safari as ffmpeg backend and use yt-dlp on iSH using it as frontend
+    - video compressor
+    - music sound check using transcoding instead of javascript wav method
+    - music sound check run once during upload time if transcoding drains much battery
+    - metadata extraction during upload time
+    - 
 - playlist loop single song
 - sub-playlist under album
 - Create album, rename album
