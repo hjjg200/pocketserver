@@ -339,100 +339,161 @@ var FFFSType;
 var ERROR_RESPONSE_BODY_READER = new Error("failed to get response body reader");
 var ERROR_INCOMPLETED_DOWNLOAD = new Error("failed to complete download");
 
-// node_modules/@ffmpeg/util/dist/esm/index.js
-var readFromBlobOrFile = (blob) => new Promise((resolve, reject) => {
-  const fileReader = new FileReader();
-  fileReader.onload = () => {
-    const { result } = fileReader;
-    if (result instanceof ArrayBuffer) {
-      resolve(new Uint8Array(result));
-    } else {
-      resolve(new Uint8Array());
-    }
-  };
-  fileReader.onerror = (event) => {
-    var _a, _b;
-    reject(Error(`File could not be read! Code=${((_b = (_a = event == null ? void 0 : event.target) == null ? void 0 : _a.error) == null ? void 0 : _b.code) || -1}`));
-  };
-  fileReader.readAsArrayBuffer(blob);
-});
-var fetchFile = async (file) => {
-  let data;
-  if (typeof file === "string") {
-    if (/data:_data\/([a-zA-Z]*);base64,([^"]*)/.test(file)) {
-      data = atob(file.split(",")[1]).split("").map((c) => c.charCodeAt(0));
-    } else {
-      data = await (await fetch(file)).arrayBuffer();
-    }
-  } else if (file instanceof URL) {
-    data = await (await fetch(file)).arrayBuffer();
-  } else if (file instanceof File || file instanceof Blob) {
-    data = await readFromBlobOrFile(file);
-  } else {
-    return new Uint8Array();
-  }
-  return new Uint8Array(data);
-};
-
-// src/ffmpeg.js
+// src/main.js
 var ffmpeg = new FFmpeg();
-ffmpeg.on("log", (log) => {
-  console.log("[FFmpeg Log]:", log.message);
+ffmpeg.on("log", (entry) => {
+  console.log("[FFmpeg log]:", entry.message);
 });
-ffmpeg.on("progress", (progress) => {
-  console.log("[Progress]:", progress);
+ffmpeg.on("progress", (prog) => {
+  console.log(`[FFmpeg progress]: frame=${prog.frame}, fps=${prog.fps}, time=${prog.time}`);
 });
-async function transcodeVideo(file) {
-  try {
-    console.log("Loading FFmpeg...");
+document.addEventListener("DOMContentLoaded", () => {
+  const wsProtocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+  const wsUrl = `${wsProtocol}${window.location.host}/ws/ffmpeg`;
+  const socket = new WebSocket(wsUrl);
+  socket.addEventListener("open", async () => {
+    console.log("[FFmpeg] WebSocket open. Loading FFmpeg core...");
     await ffmpeg.load({
       corePath: "/static/ffmpeg/ffmpeg-core.js",
       classWorkerURL: "/static/ffmpeg/worker.js"
     });
-    console.log("FFmpeg loaded!");
-    const inputFileName = "input.mp4";
-    const outputFileName = "output.mp4";
-    console.log("Reading file...");
-    const inputData = await fetchFile(file);
-    console.log("Writing input file...");
-    await ffmpeg.writeFile(inputFileName, inputData);
-    console.log("Running FFmpeg...");
-    await ffmpeg.exec(["-i", inputFileName, "-c:v", "libx264", "-preset", "fast", outputFileName]);
-    console.log("Reading output file...");
-    const outputData = await ffmpeg.readFile(outputFileName);
-    const videoBlob = new Blob([outputData], { type: "video/mp4" });
-    const videoUrl = URL.createObjectURL(videoBlob);
-    const video = document.createElement("video");
-    video.src = videoUrl;
-    video.controls = true;
-    document.body.insertBefore(video, document.body.firstChild);
-    console.log("Transcoding complete!");
-  } catch (error) {
-    console.error("Error during transcoding:", error);
-    console.log(`Error: ${error.message}`);
+    console.log("[FFmpeg] FFmpeg core loaded.");
+    socket.send("ready");
+    console.log('[FFmpeg] Sent "ready"');
+  });
+  const handleFirstMessage = async (evt) => {
+    if (typeof evt.data !== "string") {
+      console.warn("[FFmpeg] ignoring non-text message while waiting for ffargs");
+      return;
+    }
+    const ffargsJson = evt.data.trim();
+    console.log("[FFmpeg] Received ffargs JSON:", ffargsJson);
+    let ffargs;
+    try {
+      ffargs = JSON.parse(ffargsJson);
+    } catch (err) {
+      console.error("[FFmpeg] Failed to parse ffargs JSON:", err);
+      return;
+    }
+    socket.removeEventListener("message", handleFirstMessage);
+    try {
+      await flow(ffargs, socket);
+      console.log("[FFmpeg] flow complete.");
+    } catch (err) {
+      console.error("[FFmpeg] flow error:", err);
+    }
+  };
+  socket.addEventListener("message", handleFirstMessage);
+  socket.addEventListener("error", (err) => {
+    console.error("[FFmpeg] WebSocket error:", err);
+  });
+  socket.addEventListener("close", (ev) => {
+    console.log("[FFmpeg] WebSocket closed:", ev);
+  });
+});
+async function flow(ffargs, socket) {
+  await receiveAndWriteAllInputs(socket, ffargs);
+  console.log("[FFmpeg] Running ffmpeg with args:", ffargs.args);
+  await ffmpeg.exec(ffargs.args.slice(1));
+  console.log("[FFmpeg] Command finished.");
+  const outPath = ffargs.args[ffargs.output];
+  console.log(`[FFmpeg] Reading output from FS: ${outPath}`);
+  const outputData = await ffmpeg.readFile(outPath);
+  console.log("[FFmpeg] Output data length:", outputData.length);
+  const meta = JSON.stringify([ffargs.output, outputData.length]);
+  socket.send(meta);
+  console.log("[FFmpeg] Sent output meta:", meta);
+  socket.send(outputData.buffer);
+  console.log("[FFmpeg] Sent output data. Done.");
+}
+async function receiveAndWriteAllInputs(socket, ffargs) {
+  for (const inputIndex of ffargs.inputs) {
+    const metaStr = await waitForTextMessage(socket);
+    const [recvIndex, fileSize] = JSON.parse(metaStr);
+    if (recvIndex !== inputIndex) {
+      throw new Error(`Mismatch input index: expected ${inputIndex}, got ${recvIndex}`);
+    }
+    console.log(`[FFmpeg] Input #${recvIndex}, size=${fileSize}`);
+    const fileBuf = await receiveBinary(socket, fileSize);
+    const filePath = ffargs.args[recvIndex];
+    await ffmpeg.writeFile(filePath, fileBuf);
+    console.log(`[FFmpeg] Wrote ${fileBuf.length} bytes to FS at "${filePath}"`);
   }
 }
-function createDOM() {
-  const fileInput = document.createElement("input");
-  fileInput.type = "file";
-  fileInput.id = "video-input";
-  fileInput.accept = "video/*";
-  fileInput.style.display = "block";
-  fileInput.style.marginBottom = "10px";
-  const logContainer = document.createElement("div");
-  logContainer.id = "log-container";
-  logContainer.style.border = "1px solid #ccc";
-  logContainer.style.padding = "10px";
-  logContainer.style.maxHeight = "200px";
-  logContainer.style.overflowY = "auto";
-  logContainer.style.marginBottom = "10px";
-  document.body.insertBefore(fileInput, document.body.firstChild);
-  document.body.insertBefore(logContainer, document.body.firstChild);
-  fileInput.addEventListener("change", (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      transcodeVideo(file);
+function waitForTextMessage(socket) {
+  return new Promise((resolve, reject) => {
+    const onMessage = (evt) => {
+      if (typeof evt.data === "string") {
+        cleanup();
+        resolve(evt.data);
+      } else {
+        console.warn("[FFmpeg] got binary when expecting text, ignoring...");
+      }
+    };
+    const onError = (err) => {
+      cleanup();
+      reject(err);
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new Error("[FFmpeg] socket closed while waiting for text"));
+    };
+    function cleanup() {
+      socket.removeEventListener("message", onMessage);
+      socket.removeEventListener("error", onError);
+      socket.removeEventListener("close", onClose);
     }
+    socket.addEventListener("message", onMessage);
+    socket.addEventListener("error", onError);
+    socket.addEventListener("close", onClose);
   });
 }
-createDOM();
+async function receiveBinary(socket, fileSize) {
+  let received = 0;
+  const chunks = [];
+  while (received < fileSize) {
+    const chunk = await waitForBinaryMessage(socket);
+    chunks.push(chunk);
+    received += chunk.length;
+    console.log(`[FFmpeg] got chunk of size ${chunk.length}, total so far = ${received}/${fileSize}`);
+  }
+  return mergeChunks(chunks, received);
+}
+function waitForBinaryMessage(socket) {
+  return new Promise((resolve, reject) => {
+    const onMessage = async (evt) => {
+      if (typeof evt.data === "string") {
+        console.warn("[FFmpeg] ignoring text while expecting binary:", evt.data);
+        return;
+      }
+      cleanup();
+      const abuf = await evt.data.arrayBuffer();
+      resolve(new Uint8Array(abuf));
+    };
+    const onError = (err) => {
+      cleanup();
+      reject(err);
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new Error("[FFmpeg] socket closed while waiting for binary"));
+    };
+    function cleanup() {
+      socket.removeEventListener("message", onMessage);
+      socket.removeEventListener("error", onError);
+      socket.removeEventListener("close", onClose);
+    }
+    socket.addEventListener("message", onMessage);
+    socket.addEventListener("error", onError);
+    socket.addEventListener("close", onClose);
+  });
+}
+function mergeChunks(chunks, totalSize) {
+  const out = new Uint8Array(totalSize);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
+}

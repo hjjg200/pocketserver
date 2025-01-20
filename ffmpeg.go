@@ -250,6 +250,26 @@ func makeFFmpegHandler() http.HandlerFunc {
 					return
 				}
 
+				// Read output metadata
+				msgType, msg, err := wsConn.ReadMessage()
+				if err != nil {
+					logError(FFMPEG_PREFIX, "Reading output metadata, Websocket read error:", err)
+					return
+				}
+				if msgType != websocket.TextMessage {
+					logError(FFMPEG_PREFIX, "Reading output metadata, not text message")
+					return
+				}
+				var outInfo []int64
+				if err = json.Unmarshal(msg, &outInfo); err != nil {
+					logError(FFMPEG_PREFIX, "Failed to unmarshal output metadata:", err)
+					return
+				}
+				if outInfo[0] != int64(ffargs.Output) {
+					logError(FFMPEG_PREFIX, "Wrong output metadata", outInfo, "ffargs:", ffargs)
+					return
+				}
+
 				// Write output
 				outPath := formatFFmpegArgPath(ffargs, ffargs.Output)
 				out, err := os.Create(outPath)
@@ -274,6 +294,11 @@ func makeFFmpegHandler() http.HandlerFunc {
 					logError(FFMPEG_PREFIX, "Failed to read and write to output:", outPath, "err:", err)
 					return
 				}
+				if n != outInfo[1] {
+					logError(FFMPEG_PREFIX, "Size mismatch for output file", n, outInfo[1])
+					return
+				}
+				// TODO checksum
 				logDebug(FFMPEG_PREFIX, "Successfully", formatBytes(n), "written as output:", outPath)
             }
         }
@@ -325,6 +350,10 @@ func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 		n, err := io.Copy(wsWr, in)
 		if err != nil {
 			return fmt.Errorf("Failed to write to websocket [2]: %w", err)
+		}
+		err = wsWr.Close() // Close() flushes the written message
+		if err != nil {
+			return fmt.Errorf("Failed to flush the mssage: %w", err)
 		}
 		logDebug(FFMPEG_PREFIX, inPath, formatBytes(n), "written to websocket")
 
