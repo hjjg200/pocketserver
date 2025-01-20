@@ -361,12 +361,14 @@ async function flow(ffargs, socket) {
     if (recvIndex !== inputIndex) {
       throw new Error(`Index mismatch: got ${recvIndex}, expected ${inputIndex}`);
     }
+    socket.send(JSON.stringify({ type: "inputInfoOk" }));
     const realName = ffargs.args[recvIndex];
     const ext = guessExtension(realName);
     const safeIn = `job${jobCounter}_input${i}${ext}`;
     console.log(`[FFmpeg] receiving input #${recvIndex} => ${safeIn}, size=${fileSize}`);
     const fileData = await receiveBinary(socket, fileSize);
     await ffmpeg.writeFile(safeIn, fileData);
+    socket.send(JSON.stringify({ type: "inputOk" }));
     inputMap[recvIndex] = safeIn;
     safeArgs[recvIndex] = safeIn;
   }
@@ -412,6 +414,7 @@ async function flow(ffargs, socket) {
         console.log(`[FFmpeg] No safe path => 0 bytes for outIndex ${outIndex}`);
         continue;
       }
+      console.log("dc", await ffmpeg.listDir("/"), safePath);
       const outData = await ffmpeg.readFile(safePath);
       console.log(`[FFmpeg] Output #${i}, original index ${outIndex}, size: ${outData.length} bytes`);
       const meta = JSON.stringify({ type: "outInfo", outInfo: [outIndex, outData.length] });

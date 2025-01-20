@@ -83,6 +83,87 @@ async function flow(ffargs, socket) {
 
   // 1) Receive & write input files, using ASCII-safe names
   const inputMap = {};
+  /*
+  let i = 0;
+  let fileSizes = {};
+  const inputPromise = new Promise((resolve, reject) => {
+  
+    if (ffargs.inputs.length == 0) {
+      resolve();
+      return;
+    }
+
+    const onMessage = async (evt) => {
+
+      if (typeof evt.data === "string") {
+        const inputIndex = ffargs.inputs[i];
+        const metaStr = evt.data;
+        const [recvIndex, fileSize] = JSON.parse(metaStr);
+        if (recvIndex !== inputIndex) {
+          throw new Error(`Index mismatch: got ${recvIndex}, expected ${inputIndex}`);
+        }
+        console.log(`[FFmpeg] expecting input #${recvIndex} size=${fileSize}`);
+
+        fileSizes[inputIndex] = fileSize;
+
+        const inputInfoOk = JSON.stringify({ type: "inputInfoOk" });
+        socket.send(inputInfoOk);
+        
+      } else {
+
+        const inputIndex = ffargs.inputs[i];
+        const realName = ffargs.args[inputIndex];
+        const fileSize = fileSizes[inputIndex];
+        const ext = guessExtension(realName);
+
+        // e.g. "job2_input0.mp4"
+        const safeIn = `job${jobCounter}_input${i}${ext}`;
+        console.log(`[FFmpeg] receiving input #${inputIndex} => ${safeIn}`);
+
+        let received = 0;
+        const chunks = [];
+        while (received < fileSize) {
+          const chunk = await waitForBinaryMessage(socket);
+          chunks.push(chunk);
+          received += chunk.length;
+          console.log(`[FFmpeg] got chunk size=${chunk.length}, total so far=${received}/${fileSize}`);
+        }
+        return mergeChunks(chunks, received);
+        
+        const abuf = await evt.data.arrayBuffer();
+        const fileData = new Uint8Array(abuf);
+        await ffmpeg.writeFile(safeIn, fileData);
+  
+        // Patch safeArgs so it references the safeIn path
+        inputMap[inputIndex] = safeIn;
+        safeArgs[inputIndex] = safeIn;
+
+        const inputOk = JSON.stringify({ type: "inputOk" });
+        socket.send(inputOk);
+        
+        i++;
+  
+        // if it is the last file
+        if (i >= ffargs.inputs.length)
+          resolve();
+      }
+
+    }
+    const onErr = (err) => { cleanup(); reject(err); };
+    const onClose = () => { cleanup(); reject(new Error("[FFmpeg] socket closed (text)")); };
+
+    function cleanup () {
+      socket.removeEventListener("message", onMessage);
+      socket.removeEventListener("error", onErr);
+      socket.removeEventListener("close", onClose);
+    }
+
+    socket.addEventListener("message", onMessage);
+    socket.addEventListener("error", onErr);
+    socket.addEventListener("close", onClose);
+  });
+  await inputPromise;*/
+
   for (let i = 0; i < ffargs.inputs.length; i++) {
     const inputIndex = ffargs.inputs[i];
 
@@ -92,6 +173,7 @@ async function flow(ffargs, socket) {
     if (recvIndex !== inputIndex) {
       throw new Error(`Index mismatch: got ${recvIndex}, expected ${inputIndex}`);
     }
+    socket.send(JSON.stringify({ type: "inputInfoOk" }));
 
     const realName = ffargs.args[recvIndex];
     const ext = guessExtension(realName);
@@ -103,6 +185,8 @@ async function flow(ffargs, socket) {
     // Wait for the binary data
     const fileData = await receiveBinary(socket, fileSize);
     await ffmpeg.writeFile(safeIn, fileData);
+
+    socket.send(JSON.stringify({ type: "inputOk" }));
 
     // Patch safeArgs so it references the safeIn path
     inputMap[recvIndex] = safeIn;
@@ -169,6 +253,7 @@ async function flow(ffargs, socket) {
         continue;
       }
       // read it
+      console.log("dc", await ffmpeg.listDir("/"), safePath)
       const outData = await ffmpeg.readFile(safePath);
       console.log(`[FFmpeg] Output #${i}, original index ${outIndex}, size: ${outData.length} bytes`);
       // send meta + data
@@ -250,6 +335,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 /* -------------------------------------------------------------------
    The waitForTextMessage, receiveBinary, etc. for chunked input.
 ------------------------------------------------------------------- */
+
+
 
 function waitForTextMessage(socket) {
   return new Promise((resolve, reject) => {
