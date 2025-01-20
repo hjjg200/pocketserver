@@ -31,6 +31,17 @@ sudo ln -s /usr/local/musl-1.2.5-i686/bin/musl-gcc /usr/local/bin/i686-linux-mus
 - Music player -- you can edit playlist by longpress
 - Drag and drop to upload
 - https server to go for iPhone, local network can access the server using browser
+- (Testing) pipeline iSH's ffmpeg request to ffmpeg.wasm on an http client so that it can perform better
+```bash
+# on iSH
+ln -s .../path/to/pocketserver_ish /usr/local/bin/ffmpeg # Replace ffmpeg only, leave ffprobe as is
+ffmpeg -i input.mp4 -i input.m4a ...args output.mp4
+# pocketserver_ish invoked with ffmpeg sends ffmpeg arguments via unix socket to the main worker
+# main worker then sends the arguments to any available http client via websocket
+# stream input files on iSH's end via websocket to ffmpeg.wasm
+# ffmpeg.wasm sends the resulting outputn via websocket
+# main worker writes the output file at the specified output path on iSH's end
+```
 
 
 ## Safari specific notes

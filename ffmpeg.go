@@ -19,8 +19,10 @@ const FFMPEG_PREFIX = "[FFmpeg]"
 
 
 func initFFmpeg() {
+	arg0 := filepath.Base(os.Args[0])
+
 	// Check if the program is invoked as "ffmpeg" or the main app
-	if filepath.Base(os.Args[0]) == "ffmpeg2" && len(os.Args) > 1 {
+	if (arg0 == "ffmpeg" || arg0 == "pocketserver.ffmpeg") && len(os.Args) > 1 {
 		subFFmpeg(os.Args)
 		logInfo(FFMPEG_PREFIX, "Packet sent to main worker")
 		os.Exit(0)
@@ -30,6 +32,11 @@ func initFFmpeg() {
 }
 
 
+
+type FFmpegPipeTask struct {
+	FFargsJson string
+	Done chan struct{}
+}
 
 
 type FFmpegArgs struct {
@@ -144,7 +151,7 @@ func makeFFmpegHandler() http.HandlerFunc {
 
     // Channel used to pass “args” from the Unix socket connections
     // to the WebSocket connections.
-    ch := make(chan string)
+    ch := make(chan FFmpegPipeTask)
 
     // Goroutine to accept Unix socket connections
 	go func() {
@@ -168,14 +175,22 @@ func makeFFmpegHandler() http.HandlerFunc {
 					logDebug(FFMPEG_PREFIX, "Received json of arguments:", ffargsJson)
 
 					logDebug(FFMPEG_PREFIX, "Sending to channel")
-					ch <-ffargsJson
+					done := make(chan struct{})
+					ch <-FFmpegPipeTask{
+						ffargsJson, done,
+					}
 			
 					// Simulate processing the arguments
 					response := fmt.Sprintf("Processed command: %s", ffargsJson)
-					logInfo(FFMPEG_PREFIX, "Sending response:", response)
+					logDebug(FFMPEG_PREFIX, "Sending response:", response)
 			
 					// Write response back to the subordinate
 					fmt.Fprintln(conn, response)
+
+					// Wait for the task to be done and send done via socket
+					<-done
+					fmt.Fprintln(conn, "done")
+					return
 				}
 			
 				if err := scanner.Err(); err != nil {
@@ -222,7 +237,8 @@ func makeFFmpegHandler() http.HandlerFunc {
             if line == "ready" {
                 logDebug(FFMPEG_PREFIX, "Browser is ready")
                 // Wait for an "args" string from the channel
-                ffargsJson := <-ch
+                pipeTask := <-ch
+				ffargsJson := pipeTask.FFargsJson
 
 				// Parse json for processing on this end
 				var ffargs FFmpegArgs
@@ -300,6 +316,8 @@ func makeFFmpegHandler() http.HandlerFunc {
 				}
 				// TODO checksum
 				logDebug(FFMPEG_PREFIX, "Successfully", formatBytes(n), "written as output:", outPath)
+
+				pipeTask.Done <-struct{}{}
             }
         }
     }
@@ -396,6 +414,11 @@ func subFFmpeg(args []string) {
 	for scanner.Scan() {
 		response := scanner.Text()
 		logInfo(FFMPEG_PREFIX, "Response from main worker:", response)
+
+		if response == "done" {
+			logInfo(FFMPEG_PREFIX, "Done!")
+			return
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
