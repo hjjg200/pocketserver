@@ -388,20 +388,31 @@ async function cycleJobs(socket) {
   }
 }
 async function flow(ffargs, socket) {
-  await receiveAndWriteAllInputs(socket, ffargs);
-  console.log("[FFmpeg] Running ffmpeg with args:", ffargs.args);
-  const realArgs = ffargs.args.slice(1);
-  await ffmpeg.exec(realArgs);
-  console.log("[FFmpeg] ffmpeg command completed.");
-  const outPath = ffargs.args[ffargs.output];
-  console.log("[FFmpeg] Reading output from FS:", outPath);
-  const outputData = await ffmpeg.readFile(outPath);
-  console.log(`[FFmpeg] Output size: ${outputData.length} bytes`);
-  const meta = JSON.stringify([ffargs.output, outputData.length]);
-  socket.send(meta);
-  console.log("[FFmpeg] Sent output meta:", meta);
-  socket.send(outputData.buffer);
-  console.log("[FFmpeg] Sent output file data. Job finished.");
+  const jobLogs = [];
+  const onLog = (entry) => {
+    jobLogs.push(entry.message);
+  };
+  ffmpeg.on("log", onLog);
+  try {
+    await receiveAndWriteAllInputs(socket, ffargs);
+    console.log("[FFmpeg] Running ffmpeg with args:", ffargs.args);
+    const realArgs = ffargs.args.slice(1);
+    await ffmpeg.exec(realArgs);
+    console.log("[FFmpeg] ffmpeg command completed.");
+    const outPath = ffargs.args[ffargs.output];
+    console.log("[FFmpeg] Reading output from FS:", outPath);
+    const outputData = await ffmpeg.readFile(outPath);
+    console.log(`[FFmpeg] Output size: ${outputData.length} bytes`);
+    const meta = JSON.stringify([ffargs.output, outputData.length]);
+    socket.send(meta);
+    console.log("[FFmpeg] Sent output meta:", meta);
+    socket.send(outputData.buffer);
+    console.log("[FFmpeg] Output file sent, now also sending logs...");
+    socket.send(JSON.stringify({ logs: jobLogs }));
+    console.log("[FFmpeg] Sent logs for this job.");
+  } finally {
+    ffmpeg.off("log", onLog);
+  }
 }
 async function receiveAndWriteAllInputs(socket, ffargs) {
   for (const inputIndex of ffargs.inputs) {

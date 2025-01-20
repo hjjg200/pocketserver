@@ -24,7 +24,6 @@ func initFFmpeg() {
 	// Check if the program is invoked as "ffmpeg" or the main app
 	if (arg0 == "ffmpeg" || arg0 == "pocketserver.ffmpeg") && len(os.Args) > 1 {
 		subFFmpeg(os.Args)
-		logInfo(FFMPEG_PREFIX, "Packet sent to main worker")
 		os.Exit(0)
 	} else {
 		ffmpegHandler = makeFFmpegHandler()
@@ -35,7 +34,7 @@ func initFFmpeg() {
 
 type FFmpegPipeTask struct {
 	FFargsJson string
-	Done chan struct{}
+	Done chan []byte
 }
 
 
@@ -174,22 +173,26 @@ func makeFFmpegHandler() http.HandlerFunc {
 					ffargsJson := scanner.Text()
 					logDebug(FFMPEG_PREFIX, "Received json of arguments:", ffargsJson)
 
-					logDebug(FFMPEG_PREFIX, "Sending to channel")
-					done := make(chan struct{})
+					done := make(chan []byte)
 					ch <-FFmpegPipeTask{
 						ffargsJson, done,
 					}
-			
-					// Simulate processing the arguments
-					response := fmt.Sprintf("Processed command: %s", ffargsJson)
-					logDebug(FFMPEG_PREFIX, "Sending response:", response)
-			
-					// Write response back to the subordinate
-					fmt.Fprintln(conn, response)
 
 					// Wait for the task to be done and send done via socket
-					<-done
-					fmt.Fprintln(conn, "done")
+					ffmpegLogsJson := <-done
+
+					var ffmpegLogs struct{
+						Logs []string `json:"logs"`
+					}
+					err = json.Unmarshal(ffmpegLogsJson, &ffmpegLogs)
+					if err != nil {
+						logError(FFMPEG_PREFIX, "Failed to unmarshal ffmpeg logs object", err)
+						return
+					}
+					
+					for _, line := range ffmpegLogs.Logs {
+						fmt.Fprintln(conn, line)
+					}
 					return
 				}
 			
@@ -317,7 +320,19 @@ func makeFFmpegHandler() http.HandlerFunc {
 				// TODO checksum
 				logDebug(FFMPEG_PREFIX, "Successfully", formatBytes(n), "written as output:", outPath)
 
-				pipeTask.Done <-struct{}{}
+				// Read the logs
+				msgType, ffmpegLogsJson, err := wsConn.ReadMessage()
+				if err != nil {
+					logError(FFMPEG_PREFIX, "Reading ffmpeg logs, Websocket read error:", err)
+					return
+				}
+				if msgType != websocket.TextMessage {
+					logError(FFMPEG_PREFIX, "Reading ffmpeg logs, not text message")
+					return
+				}
+
+				// Finish the job
+				pipeTask.Done <-ffmpegLogsJson
             }
         }
     }
@@ -407,21 +422,16 @@ func subFFmpeg(args []string) {
 		logFatal(FFMPEG_PREFIX, "Failed to marshal json", err)
 	}
 	fmt.Fprintln(conn, string(ffargsJson))
-	logInfo(FFMPEG_PREFIX, "Sent arguments:", string(ffargsJson))
+	//logInfo(FFMPEG_PREFIX, "SPAWNED pocketserver_ish SUBORDINATE WORKER FOR PROCESSING", string(ffargsJson))
 
 	// Read response from the main worker
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		response := scanner.Text()
-		logInfo(FFMPEG_PREFIX, "Response from main worker:", response)
-
-		if response == "done" {
-			logInfo(FFMPEG_PREFIX, "Done!")
-			return
-		}
+		fmt.Println(response)
 	}
 
 	if err := scanner.Err(); err != nil {
-		logInfo(FFMPEG_PREFIX, "Scanner error:", err)
+		logFatal(FFMPEG_PREFIX, "Scanner error:", err)
 	}
 }
