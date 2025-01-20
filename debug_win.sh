@@ -1,2 +1,2 @@
-go build -o bin/pocketserver.exe
-./bin/pocketserver.exe -debug -password=1234
+./compile.sh &&
+./bin/pocketserver -debug -password=1234

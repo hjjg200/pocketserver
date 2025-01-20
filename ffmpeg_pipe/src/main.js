@@ -3,32 +3,32 @@ import { fetchFile } from '@ffmpeg/util';
 
 /*
   Final multi-job code with the following features:
-    1) Filenames in wasm FS = "input1.ext", "input2.ext", ... "output.ext".
+    1) Filenames in wasm FS = "jobX_inputY.ext" or "jobX_outZ.ext".
        That avoids any UTF-8 or path issues.
     2) Ephemeral 'log' listener that sends logs line by line to the server,
-       then sends 'EOF_LOG' after finishing.
-    3) Check if the 0th argument is something like "ffprobe" => use ffprobe
-       instead of exec. If there's an output file (like -o out.txt),
-       we read it and send. Otherwise, 0 bytes.
-    4) Multi-job: 'cycleJobs' with "ready" <-> "nomore"/args.
+       e.g. {type:"logLine", logLine:"..."} message
+    3) If the 0th argument ends with "ffprobe" => use ffprobe,
+       else use ffmpeg.exec.
+    4) Multiple output files, read each and send the data to the server.
+    5) Multi-job: cycle with "ready" <-> "nomore"/args.
 */
 
 const ffmpeg = new FFmpeg();
 
-// Global job counter to name input files uniquely
+// Global job counter to name input & output files uniquely
 let jobCounter = 0;
 
-/** Log + progress forwarding is optional. We'll attach ephemeral 'log' listener for each job. */
+/** Optional: track progress events for debugging. */
 ffmpeg.on('progress', (prog) => {
   console.log(`[FFmpeg progress] frame=${prog.frame}, fps=${prog.fps}, time=${prog.time}`);
 });
 
 /**
- * The main multi-job loop: 
+ * The main multi-job loop:
  *   1) send "ready"
  *   2) wait for text message 
  *      - "nomore" => break
- *      - otherwise => parse ffargs => flow(ffargs)
+ *      - otherwise => parse JSON => flow(ffargs)
  *   3) repeat
  */
 async function cycleJobs(socket) {
@@ -45,7 +45,7 @@ async function cycleJobs(socket) {
         break;
       }
 
-      // parse ffargs
+      // parse the ffargs object
       const ffargs = JSON.parse(line);
       await flow(ffargs, socket);
 
@@ -56,16 +56,17 @@ async function cycleJobs(socket) {
     console.error("[FFmpeg] cycleJobs error:", err);
   }
 }
+
 /**
  * flow(ffargs, socket):
- *   1) receive input files and write them to wasm FS
- *   2) if we detect 'ffprobe' at the 0th arg, call ffmpeg.ffprobe(...) with a slice
- *      else call ffmpeg.exec(...) with a slice
- *   3) ephemeral log listener
- *   4) read output from FS if any, send to server
+ *   1) receive input files => "jobX_inputY.ext" in FS
+ *   2) if 0th arg ends with "ffprobe" => ffprobe(...) else ffmpeg.exec(...)
+ *   3) ephemeral logs => log lines streaming
+ *   4) read each output => send to server
  */
 async function flow(ffargs, socket) {
   jobCounter++;
+
   // ephemeral log array
   const jobLogs = [];
 
@@ -73,74 +74,71 @@ async function flow(ffargs, socket) {
   const onLog = (entry) => {
     const logLine = entry.message;
     jobLogs.push(logLine);
-    // also stream each line to server
+    // Also stream each line to server
     socket.send(JSON.stringify({ type: "logLine", logLine }));
   };
 
-  // 1) receive & write input files, using ASCII-safe names
+  // Make a local copy of arguments that we can patch in-place
+  const safeArgs = ffargs.args.slice();
+
+  // 1) Receive & write input files, using ASCII-safe names
   const inputMap = {};
   for (let i = 0; i < ffargs.inputs.length; i++) {
     const inputIndex = ffargs.inputs[i];
+
+    // Wait for a text message describing the file's size
     const metaStr = await waitForTextMessage(socket);
     const [recvIndex, fileSize] = JSON.parse(metaStr);
     if (recvIndex !== inputIndex) {
       throw new Error(`Index mismatch: got ${recvIndex}, expected ${inputIndex}`);
     }
+
     const realName = ffargs.args[recvIndex];
     const ext = guessExtension(realName);
+
+    // e.g. "job2_input0.mp4"
     const safeIn = `job${jobCounter}_input${i}${ext}`;
     console.log(`[FFmpeg] receiving input #${recvIndex} => ${safeIn}, size=${fileSize}`);
 
-    const data = await receiveBinary(socket, fileSize);
-    await ffmpeg.writeFile(safeIn, data);
+    // Wait for the binary data
+    const fileData = await receiveBinary(socket, fileSize);
+    await ffmpeg.writeFile(safeIn, fileData);
+
+    // Patch safeArgs so it references the safeIn path
     inputMap[recvIndex] = safeIn;
+    safeArgs[recvIndex] = safeIn;
   }
 
-  // 2) ephemeral log capturing
+  // 2) Build a map of output index => safeOut path
+  const outMap = {};
+  for (let i = 0; i < ffargs.outputs.length; i++) {
+    // For each output index, build something like "job2_out0.mp4"
+    // if i is within range
+    const outIndex = ffargs.outputs[i];
+    if (outIndex >= 0 && outIndex < ffargs.args.length) {
+      const origOut = ffargs.args[outIndex];
+      const outExt = guessExtension(origOut);
+      const safeOut = `job${jobCounter}_out${i}${outExt}`;
+
+      outMap[outIndex] = safeOut;
+      safeArgs[outIndex] = safeOut;
+    }
+  }
+
+  // ephemeral log capturing
   ffmpeg.on("log", onLog);
-  let outSafe = "";
-  let hadOutput = false;
+
   try {
-    // 2A) figure out if this is ffprobe or ffmpeg
-    // We look at ffargs.args[0], but we only skip it right before calling the method
+    // 2A) determine if ffprobe or ffmpeg
     let isFfprobe = false;
     if (ffargs.args[0].endsWith("ffprobe")) {
       isFfprobe = true;
     }
 
-    // 2B) patch up input references in ffargs.args with our "safe" input FS names
-    // (No slicing the array, just do find & replace of input file path)
-    for (const idx of ffargs.inputs) {
-      const safeName = inputMap[idx];
-      if (!safeName) continue;
-      const origName = ffargs.args[idx];
-      // find occurrences in ffargs.args
-      for (let r = 0; r < ffargs.args.length; r++) {
-        if (ffargs.args[r] === origName) {
-          ffargs.args[r] = safeName;
-        }
-      }
-    }
+    // We'll skip the first argument if it ends with "ffmpeg" or "ffprobe"
+    const callArgs = skipFirstIfNeeded(safeArgs);
 
-    // 2C) detect output
-    if (ffargs.output >= 0 && ffargs.output < ffargs.args.length) {
-      const origOut = ffargs.args[ffargs.output];
-      const outExt = guessExtension(origOut);
-      outSafe = `job${jobCounter}_out${outExt}`;
-      // find & replace
-      for (let r = 0; r < ffargs.args.length; r++) {
-        if (ffargs.args[r] === origOut) {
-          ffargs.args[r] = outSafe;
-        }
-      }
-    }
-
-    // 2D) create the final "callArgs" by slicing if needed
-    // If ffargs.args[0] is "pocketserver.ffmpeg" or "pocketserver.ffprobe" etc.
-    // only skip the first item if it ends with "ffmpeg" or "ffprobe"
-    const callArgs = skipFirstIfNeeded(ffargs.args);
-
-    // 2E) run ffprobe or exec
+    // 2B) run
     if (isFfprobe) {
       console.log("[FFmpeg] Running ffprobe with callArgs:", callArgs);
       await ffmpeg.ffprobe(callArgs);
@@ -151,71 +149,81 @@ async function flow(ffargs, socket) {
       console.log("[FFmpeg] ffmpeg exec done");
     }
 
-  } finally {
-    ffmpeg.off("log", onLog);
-  }
+    // 2C) send log end
+    const logEnd = JSON.stringify({ type: "logEnd" });
+    socket.send(logEnd);
 
-  try {
-    // 3) read the output if we have outSafe
-    if (outSafe) {
-      const outData = await ffmpeg.readFile(outSafe);
-      hadOutput = true;
-      console.log(`[FFmpeg] Output size: ${outData.length} bytes`);
-
+    // 3) read each output from FS
+    for (let i = 0; i < ffargs.outputs.length; i++) {
+      const outIndex = ffargs.outputs[i];
+      if (outIndex < 0 || outIndex >= ffargs.args.length) {
+        // invalid => 0
+        socket.send(JSON.stringify({ type: "outInfo", outInfo: [outIndex, 0] }));
+        console.log(`[FFmpeg] Output index ${outIndex} is out of range => 0 bytes`);
+        continue;
+      }
+      const safePath = outMap[outIndex];
+      if (!safePath) {
+        socket.send(JSON.stringify({ type: "outInfo", outInfo: [outIndex, 0] }));
+        console.log(`[FFmpeg] No safe path => 0 bytes for outIndex ${outIndex}`);
+        continue;
+      }
+      // read it
+      const outData = await ffmpeg.readFile(safePath);
+      console.log(`[FFmpeg] Output #${i}, original index ${outIndex}, size: ${outData.length} bytes`);
       // send meta + data
-      const meta = JSON.stringify({ type: "outInfo", outInfo: [ffargs.output, outData.length]});
+      const meta = JSON.stringify({ type: "outInfo", outInfo: [outIndex, outData.length] });
       socket.send(meta);
       socket.send(outData.buffer);
       console.log("[FFmpeg] Sent output to server");
-    } else {
-      // no output => send 0 length
-      socket.send(JSON.stringify({ type: "outInfo", outInfo: [-1, 0]}));
-      console.log("[FFmpeg] No output. Sent 0 bytes info.");
     }
+
   } finally {
-    // optionally remove input & output from FS
-    for (const safeName of Object.values(inputMap)) {
-      try { ffmpeg.FS('unlink', safeName); } catch(e){}
+    // Remove ephemeral log listener
+    ffmpeg.off("log", onLog);
+
+    // 4) remove inputs from FS
+    for (const safeIn of Object.values(inputMap)) {
+      try { ffmpeg.FS("unlink", safeIn); } catch(e){}
     }
-    if (outSafe && hadOutput) {
-      try { ffmpeg.FS('unlink', outSafe); } catch(e){}
+
+    // remove outputs from FS
+    for (const safeOut of Object.values(outMap)) {
+      try { ffmpeg.FS("unlink", safeOut); } catch(e){}
     }
   }
 }
 
 /**
- * Only strip out the first item from "args" if it's "ffmpeg" or "ffprobe"
+ * guessExtension: a naive approach to get an extension from a path.
+ * If there's no '.', returns ".dat".
  */
-function skipFirstIfNeeded(array) {
-  if (array.length > 0) {
-    const first = array[0];
-    if (first.endsWith("ffmpeg") || first.endsWith("ffprobe")) {
-      return array.slice(1);
-    }
-  }
-  return array; // unchanged
-}
-  
-/* ------------------------------------------------------------------- */
-/* Additional Helpers */
-/* ------------------------------------------------------------------- */
-
-// a simple guessExtension function. real logic might parse the string
-// or do ".mp4" if we see "mp4" etc. We'll just do a naive approach here.
 function guessExtension(filePath) {
-  // find last dot
+  if (!filePath) return ".dat";
   const i = filePath.lastIndexOf(".");
-  if (i < 0) return ".dat"; 
-  return filePath.substring(i); // e.g. ".mp4"
+  if (i < 0) return ".dat";
+  return filePath.substring(i);
 }
 
-/* same multi-job approach from earlier: send "ready", if "nomore" break, else parse ffargs => flow(...) */
+/**
+ * skipFirstIfNeeded: if the first argument ends with 'ffmpeg' or 'ffprobe',
+ * strip it out. Otherwise return the array unchanged.
+ */
+function skipFirstIfNeeded(args) {
+  if (!args.length) return args;
+  const first = args[0];
+  if (first.endsWith("ffmpeg") || first.endsWith("ffprobe")) {
+    return args.slice(1);
+  }
+  return args;
+}
+
+/* multi-job approach from earlier: send "ready", if "nomore" => break, else parse => flow(...) */
 async function mainLoop(socket) {
   await cycleJobs(socket);
   console.log("[FFmpeg] All jobs completed or 'nomore'.");
 }
 
-/* We'll call mainLoop after we open the socket + load ffmpeg. */
 document.addEventListener('DOMContentLoaded', async () => {
   const wsProtocol = (location.protocol === "https:") ? "wss://" : "ws://";
   const socketURL = wsProtocol + location.host + "/ws/ffmpeg";
@@ -239,9 +247,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 
-/* ------------------------------------------------------------------- */
-/* The waitForTextMessage, receiveBinary, etc. for chunked input. */
-/* ------------------------------------------------------------------- */
+/* -------------------------------------------------------------------
+   The waitForTextMessage, receiveBinary, etc. for chunked input.
+------------------------------------------------------------------- */
 
 function waitForTextMessage(socket) {
   return new Promise((resolve, reject) => {

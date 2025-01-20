@@ -3,13 +3,13 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"flag"
 	"net"
 	"os"
 	"io"
 	"encoding/json"
 	"path/filepath"
 	"net/http"
+	"mime"
 	"strings"
 	"sync"
 
@@ -23,7 +23,11 @@ func initFFmpeg() {
 	arg0 := filepath.Base(os.Args[0])
 
 	// Check if the program is invoked as "ffmpeg" or the main app
-	if (arg0 == "ffmpeg" || arg0 == "pocketserver.ffmpeg") && len(os.Args) > 1 {
+	if (len(os.Args) > 1 &&
+		arg0 == "ffmpeg" ||
+		arg0 == "pocketserver.ffmpeg" ||
+		arg0 == "ffprobe" ||
+		arg0 == "pocketserver.ffprobe") {
 		subFFmpeg(os.Args)
 		os.Exit(0)
 	} else {
@@ -42,123 +46,70 @@ type FFmpegPipeTask struct {
 type FFmpegArgs struct {
 	Cwd		string		`json:"cwd"`
 	Inputs	[]int		`json:"inputs"`
-	Output	int			`json:"output"`
+	Outputs	[]int		`json:"outputs"`
 	Args 	[]string	`json:"args"`
 }
 
+// parseFFmpegArgs does a single pass:
+//   - If an arg starts with '-' => flag. If it equals "-i", the next file is an input
+//   - If an arg starts with "file:", remove "file:" prefix
+//   - Use mime.TypeByExtension to check if extension is recognized
+//   - If recognized or not, if preceded by "-i", => input; else => output
 func parseFFmpegArgs(args []string) (*FFmpegArgs, error) {
-    // 1) Resolve the current working directory
-    cwd, err := os.Getwd()
-    if err != nil {
-        return nil, fmt.Errorf("Error getting current working directory: %v", err)
-    }
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("error getting cwd: %v", err)
+	}
 
-    // 2) Make a copy of `args` minus any program name if needed. If your first element
-    //    is "ffmpeg" or "ffmpeg2", you can skip it. Otherwise you can keep them all.
-    //    For example, if the user calls "ffmpeg -i in.mov out.mp4", then args might
-    //    start with "ffmpeg" at index 0. If that's extraneous, we remove it:
-    // 
-    //    If you want to keep the entire array, you can skip this step. It's optional.
-    // 
-    realArgs := args
-    if len(realArgs) > 0 && (realArgs[0] == "ffmpeg" || realArgs[0] == "ffmpeg2") {
-        realArgs = realArgs[1:] // drop the program name
-    }
+	res := &FFmpegArgs{
+		Cwd:    cwd,
+		Inputs: []int{},
+		Outputs: []int{},
+		Args:   args,
+	}
 
-    // 3) We'll parse known flags, if you like. For example, if you accept `-o output`,
-    //    or other custom flags, you can do so with flag.NewFlagSet. Otherwise skip.
-    fs := flag.NewFlagSet("ffmpeg", flag.ContinueOnError)
-    outputPtr := fs.String("o", "", "Output file (optional)")
-    // Parse known flags
-    if err := fs.Parse(realArgs); err != nil {
-        return nil, err
-    }
-    // The non-flag arguments from fs.Parse are in fs.Args()
-    remaining := fs.Args()
+	lastWasDashI := false
 
-    // 4) Detect all `-i <input>` patterns in `remaining`:
-    var inputIndexes []int // these are indexes within `realArgs` (the original array)
-    i := 0
-    for i < len(remaining) {
-        if remaining[i] == "-i" && (i+1 < len(remaining)) {
-            // We found an input
-            // But we must map back to the original indexes in realArgs
-            // We'll find the real index by searching in realArgs for this substring
-            // However, an easier approach is to simply find them in `remaining` and
-            // store that offset. We only need to ensure we pass them to a higher-level
-            // function that references realArgs. For clarity, we'll do a manual approach:
-            inputFileIndex := findArgIndexInOriginal(realArgs, remaining[i+1])
-            if inputFileIndex < 0 {
-                return nil, fmt.Errorf("Could not find input file %q in original args", remaining[i+1])
-            }
-            inputIndexes = append(inputIndexes, inputFileIndex)
-            i += 2
-        } else {
-            // skip
-            i++
-        }
-    }
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			// It's a flag
+			if arg == "-i" {
+				lastWasDashI = true
+			} else {
+				lastWasDashI = false
+			}
+			continue
+		}
 
-    // 5) Determine the output index.
-    //    By convention, we treat the *very last argument* as the output file,
-    //    unless the user used -o <file>.
-    outputIndex := -1
+		// Not a flag => treat as potential file path
+		const prefix = "file:"
+		path := arg
+		if strings.HasPrefix(path, prefix) {
+			// remove "file:"
+			path = path[len(prefix):]
+		}
 
-    if *outputPtr != "" {
-        // The user explicitly used -o
-        // find that argument in the original array
-        found := false
-        for idx, arg := range realArgs {
-            if arg == *outputPtr {
-                // We found the output path
-                // But remember realArgs might be offset from the original "args" if we stripped the 0th
-                // If you want indexes in the final combined array, that’s up to you. We'll just store
-                // the index in realArgs for the output.
-                outputIndex = idx + (len(args) - len(realArgs)) // map back if you removed the 0th earlier
-                found = true
-                break
-            }
-        }
-        if !found {
-            return nil, fmt.Errorf("Output file specified by -o not found in args: %s", *outputPtr)
-        }
-    } else {
-        // The last non-flag argument is the output
-        // That means the last element of realArgs is the output
-        if len(realArgs) == 0 {
-            return nil, fmt.Errorf("No arguments provided at all")
-        }
-        outputIndex = len(args) - 1 // last item in the *full* array
-    }
+		ext := strings.ToLower(filepath.Ext(path))
+		mimeType := mime.TypeByExtension(ext)
 
-    // 6) Validate
-    if len(inputIndexes) == 0 {
-        return nil, fmt.Errorf("No input files detected (missing -i <file>)")
-    }
-    if outputIndex < 0 {
-        return nil, fmt.Errorf("No output file determined")
-    }
+		// Ignore args that don't seem like a path
+		if mimeType == "" {
+			continue
+		}
 
-    return &FFmpegArgs{
-        Cwd:    cwd,
-        Inputs: inputIndexes,
-        Output: outputIndex,
-        Args:   args, // or realArgs, depending on how you want them stored
-    }, nil
+		if lastWasDashI {
+			// Preceded by -i => input
+			res.Inputs = append(res.Inputs, i)
+			lastWasDashI = false
+		} else {
+			// Not preceded by -i => output
+			res.Outputs = append(res.Outputs, i)
+		}
+	}
+
+	return res, nil
 }
-
-// findArgIndexInOriginal is a helper to find the index of "value" in "originalArgs".
-// If you removed the 0th "ffmpeg" name, you might skip that or adapt accordingly.
-func findArgIndexInOriginal(original []string, value string) int {
-    for idx, v := range original {
-        if v == value {
-            return idx
-        }
-    }
-    return -1
-}
-
-
 
 
 
@@ -285,12 +236,6 @@ func makeFFmpegHandler() http.HandlerFunc {
 					return
 				}
 
-				// Check files
-				if ffargs.Output == -1 || len(ffargs.Inputs) == 0 {
-					logError(FFMPEG_PREFIX, "Malformed ffmpeg args:", ffargs)
-					return
-				}
-
                 // Send back to the browser
                 err = wsConn.WriteMessage(websocket.TextMessage, []byte(ffargsJson))
                 if err != nil {
@@ -299,7 +244,6 @@ func makeFFmpegHandler() http.HandlerFunc {
                 }
 				
 				// Write inputs to the wasm end
-				var outInfoObj map[string]interface{}
 				var wg sync.WaitGroup
 				wg.Add(len(ffargs.Inputs) + 1)
 				go func() {
@@ -314,10 +258,9 @@ func makeFFmpegHandler() http.HandlerFunc {
 						}
 						if typ == "logLine" {
 							pipeTask.LogLineCh <-logLineObj["logLine"].(string)
-						} else if typ == "outInfo" {
+						} else if typ == "logEnd" {
 							// logLine is now over
 							close(pipeTask.LogLineCh)
-							outInfoObj = logLineObj
 							return
 						} else {
 							logError(FFMPEG_PREFIX, "Reading logLine, unexpected message", logLineObj)
@@ -331,60 +274,11 @@ func makeFFmpegHandler() http.HandlerFunc {
 				}
 				wg.Wait()
 
-				// Read output metadata
-				outInfoIface, ok := outInfoObj["outInfo"].([]interface{})
-				if !ok {
-					logError(FFMPEG_PREFIX, "Wrong output metadata object", outInfoObj, "ffargs:", ffargs)
+				if err = processFFmpegOutputs(wsConn, ffargs); err != nil {
+					logError(FFMPEG_PREFIX, "Failed to process output files:", err)
 					return
 				}
-				outInfo := make([]int64, 2)
-				for i, iface := range outInfoIface {
-					f, ok := iface.(float64)
-					if !ok {
-						logError(FFMPEG_PREFIX, "Wrong output metadata object", outInfoObj, "ffargs:", ffargs)
-						return
-					}
-					outInfo[i] = int64(f)
-				}
-				if outInfo[0] != int64(ffargs.Output) {
-					logError(FFMPEG_PREFIX, "Wrong output metadata", outInfo, "ffargs:", ffargs)
-					return
-				}
-
-				// Write output
-				outPath := formatFFmpegArgPath(ffargs, ffargs.Output)
-				out, err := os.Create(outPath)
-				if err != nil {
-					logError(FFMPEG_PREFIX, "Failed to create output file:", outPath, "err:", err)
-					return
-				}
-
-				// Copy all data from the WebSocket connection to the file
-				msgType, wsRd, err := wsConn.NextReader()
-				if err != nil {
-					logError(FFMPEG_PREFIX, "Failed to make websocket reader:", err)
-					out.Close()
-					return
-				}
-				if msgType != websocket.BinaryMessage {
-					logError(FFMPEG_PREFIX, "Malformed data type from websocket:", msgType)
-					out.Close()
-					return
-				}
-				n, err := io.Copy(out, wsRd)
-				if err != nil {
-					logError(FFMPEG_PREFIX, "Failed to read and write to output:", outPath, "err:", err)
-					out.Close()
-					return
-				}
-				if n != outInfo[1] {
-					logError(FFMPEG_PREFIX, "Size mismatch for output file", n, outInfo[1])
-					out.Close()
-					return
-				}
-				// TODO checksum
-				logDebug(FFMPEG_PREFIX, "Successfully", formatBytes(n), "written as output:", outPath)
-				out.Close()
+				logDebug(FFMPEG_PREFIX, "Success")
             }
         }
     }
@@ -422,6 +316,67 @@ func formatFFmpegArgPath(ffargs FFmpegArgs, i int) string {
 		p = filepath.Join(ffargs.Cwd, p)
 	}
 	return p
+}
+
+func processFFmpegOutputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
+
+	for _, outIndex := range ffargs.Outputs {
+		
+		typ, outInfoObj, err := parseFFmpegTextMessage(wsConn.ReadMessage())
+		if err != nil {
+			return fmt.Errorf("Reading logline, Websocket read error: %w", err)
+		}
+		if typ != "outInfo" {
+			return fmt.Errorf("Malformed outInfo packet %v", outInfoObj)
+		}
+
+		// Read output metadata
+		outInfoIface, ok := outInfoObj["outInfo"].([]interface{})
+		if !ok {
+			return fmt.Errorf("Wrong output metadata object %v: ffargs: %v", outInfoObj, ffargs)
+		}
+		outInfo := make([]int64, 2)
+		for i, iface := range outInfoIface {
+			f, ok := iface.(float64)
+			if !ok {
+				return fmt.Errorf("Wrong output metadata object %v ffargs: %v", outInfoObj, ffargs)
+			}
+			outInfo[i] = int64(f)
+		}
+
+		// Check if it is the correct index
+		if int64(outIndex) != outInfo[0] {
+			return fmt.Errorf("Malformed outInfo, wrong out index for %d: %v", outIndex, outInfoObj)
+		}
+
+		// Write output
+		outPath := formatFFmpegArgPath(ffargs, outIndex)
+		out, err := os.Create(outPath)
+		if err != nil {
+			return fmt.Errorf("Failed to create output file: %s err: %w", outPath, err)
+		}
+		defer out.Close()
+
+		// Copy all data from the WebSocket connection to the file
+		msgType, wsRd, err := wsConn.NextReader()
+		if err != nil {
+			return fmt.Errorf("Failed to make websocket reader: %w", err)
+		}
+		if msgType != websocket.BinaryMessage {
+			return fmt.Errorf("Malformed data type from websocket: %d", msgType)
+		}
+		n, err := io.Copy(out, wsRd)
+		if err != nil {
+			return fmt.Errorf("Failed to read and write to output: %s err: %w", outPath, err)
+		}
+		if n != outInfo[1] {
+			return fmt.Errorf("Size mismatch for output file %d, %d", n, outInfo[1])
+		}
+		// TODO checksum
+		logDebug(FFMPEG_PREFIX, "Successfully", formatBytes(n), "written as output:", outPath)
+	}
+	return nil
+
 }
 
 func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs, wg *sync.WaitGroup) error {

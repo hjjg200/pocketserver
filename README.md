@@ -79,4 +79,6 @@ ffmpeg -i in.opus -c:v mjpeg -c:a aac -b:a 128k -map_metadata 0 -map_metadata 0:
 ffmpeg -i "$INPUT" -c:v hevc_nvenc -tag:v hvc1 -preset slow -crf 28 -c:a aac -b:a 192k -x265-params "aq-mode=3" "${INPUT%.*}_2.mp4"
 yt-dlp --extract-audio --audio-format best --embed-thumbnail --add-metadata --metadata-from-title "%(title)s" -o "%(title)s.%(ext)s" $1
 alias goish='CC=i686-linux-musl-gcc CGO_ENABLED=1 GOOS=linux GOARCH=386 go'
+
+ffmpeg -i in.mp3 -map 0:a -map 0:v:0 -c:a aac -c:v mjpeg -disposition:v attached_pic out.m4a
 ```
