@@ -23,7 +23,7 @@ const copyFiles = (srcDir, destDir) => {
 
 esbuild.build({
     entryPoints: ['src/main.js'],  // Path to your main JavaScript file
-    outfile: 'static/ffmpeg_pipe.js', // Output bundled file
+    outfile: 'dist/static/ffmpeg_pipe.js', // Output bundled file
     bundle: true,                // Bundle all dependencies
     format: 'esm',               // Ensure ES module output
     platform: 'browser',
@@ -33,13 +33,13 @@ esbuild.build({
     // Copy @ffmpeg/core/dist/esm/* to static/ffmpeg/*
     copyFiles(
         path.resolve('node_modules/@ffmpeg/core/dist/esm'),
-        path.resolve('static/ffmpeg')
+        path.resolve('dist/static/ffmpeg')
     );
 
     // Copy @ffmpeg/ffmpeg/dist/esm/* to static/ffmpeg/*
     copyFiles(
         path.resolve('node_modules/@ffmpeg/ffmpeg/dist/esm'),
-        path.resolve('static/ffmpeg')
+        path.resolve('dist/static/ffmpeg')
     );
 
     console.log('File copying completed!');
