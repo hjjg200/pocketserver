@@ -60,6 +60,8 @@ ffmpeg -i input.mp4 -i input.m4a ...args output.mp4
     - music sound check using transcoding instead of javascript wav method
     - music sound check run once during upload time if transcoding drains much battery
     - metadata extraction during upload time
+    - ffprobe
+    - handle browser drop out, handle ffmpeg cancel
     - ...
 - log functions fix argument handling
 - playlist loop single song
