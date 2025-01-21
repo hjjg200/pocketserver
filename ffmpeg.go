@@ -23,10 +23,8 @@ func initFFmpeg() {
 
 	// Check if the program is invoked as "ffmpeg" or the main app
 	if (len(os.Args) > 1 &&
-		arg0 == "ffmpeg" ||
-		arg0 == "pocketserver.ffmpeg" ||
-		arg0 == "ffprobe" ||
-		arg0 == "pocketserver.ffprobe") {
+		strings.HasSuffix(arg0, "ffmpeg") ||
+		strings.HasSuffix(arg0, "ffprobe")) {
 		subFFmpeg(os.Args)
 		os.Exit(0)
 	} else {
@@ -147,7 +145,7 @@ func makeFFmpegHandler() http.HandlerFunc {
 
     // Channel used to pass “args” from the Unix socket connections
     // to the WebSocket connections.
-    ch := make(chan FFmpegPipeTask)
+    ch := make(chan FFmpegPipeTask, 10)
 
     // Goroutine to accept Unix socket connections
 	go func() {
@@ -198,85 +196,150 @@ func makeFFmpegHandler() http.HandlerFunc {
 
     // Return an HTTP handler (for /ws/ffmpeg) that uses gorilla/websocket
     return func(w http.ResponseWriter, r *http.Request) {
-        logInfo(FFMPEG_PREFIX, "WebSocket request using gorilla")
+		logHTTPRequest(r, -1, FFMPEG_PREFIX, "ffmpeg websocket established")
 
         // Use the gorilla Upgrader to turn this into a WebSocket
         wsConn, err := upgrader.Upgrade(w, r, nil)
         if err != nil {
-            logInfo(FFMPEG_PREFIX, "Upgrade error:", err)
+			logHTTPRequest(r, 599, FFMPEG_PREFIX, "Upgrade error:", err)
             return
         }
         defer wsConn.Close()
 
-        logInfo(FFMPEG_PREFIX, "WebSocket connection established (gorilla)")
-
         // Read messages in a loop from the browser
         for {
+
 			// TODO error handling for the browser side
+			err = pingPongFFmpegMessageOfType(wsConn, "ready", nil)
+			if err != nil {
+				logHTTPRequest(r, 599, FFMPEG_PREFIX, "websocket failed to get ready", err)
+				return
+			}
 
-            // msgType will be websocket.TextMessage or Binary, etc.
-            _, msg, err := wsConn.ReadMessage()
-            if err != nil {
-                logError(FFMPEG_PREFIX, "Websocket read error:", err)
-                return
-            }
-            line := strings.TrimSpace(string(msg))
-            logDebug(FFMPEG_PREFIX, "Received:", line)
+			logDebug(FFMPEG_PREFIX, "Browser is ready and is waiting")
 
-            if line == "ready" {
-                logDebug(FFMPEG_PREFIX, "Browser is ready")
-                // Wait for an "args" string from the channel
-                pipeTask := <-ch
-				ffargsJson := pipeTask.FFargsJson
+			// Wait for a job
+			pipeTask := <-ch
+			ffargsJson := pipeTask.FFargsJson
+
+			err = pingPongFFmpegMessageOfType(wsConn, "taskReady", nil)
+			if err != nil {
+				// Hand out fftask to another
+				logHTTPRequest(r, 599, FFMPEG_PREFIX, "websocket failed handing task out to another", err)
+				ch <-pipeTask
+
+				// Close websocket
+				return
+			}
+
+			func () {
+					
+				defer func() {
+					// TODO error handling
+					// Send close to close unix socket
+					close(pipeTask.LogLineCh)
+				}()
+
+				logHTTPRequest(r, -1, FFMPEG_PREFIX, "received ffargs json", ffargsJson)
 
 				// Parse json for processing on this end
 				var ffargs FFmpegArgs
 				if err = json.Unmarshal([]byte(ffargsJson), &ffargs); err != nil {
-					logError(FFMPEG_PREFIX, "FFmpeg args json error:", err)
+					logHTTPRequest(r, 599, FFMPEG_PREFIX, "FFmpeg args json error:", err)
 					return
 				}
 
-                // Send back to the browser
-                err = wsConn.WriteMessage(websocket.TextMessage, []byte(ffargsJson))
-                if err != nil {
-                    logError(FFMPEG_PREFIX, "Write error:", err)
-                    return
-                }
+				// Send ffargs
+				err = pingPongFFmpegMessageOfType(wsConn, "ffargs", ffargs)
+				if err != nil {
+					logHTTPRequest(r, 599, FFMPEG_PREFIX, "Failed to ping pong ffargs:", err)
+					return
+				}
 				
 				// Write inputs to the wasm end
 				if err = processFFmpegInputs(wsConn, ffargs); err != nil {
-					logError(FFMPEG_PREFIX, "Failed to write input files to websocket:", err)
+					logHTTPRequest(r, 599, FFMPEG_PREFIX, "Failed to write input files to websocket:", err)
 					return
 				}
 
 				for {
 					typ, logLineObj, err := parseFFmpegTextMessage(wsConn.ReadMessage())
 					if err != nil {
-						logError(FFMPEG_PREFIX, "Reading logline, Websocket read error:", err)
+						logHTTPRequest(r, 599, FFMPEG_PREFIX, "Reading logline, Websocket read error:", err)
 						return
 					}
 					if typ == "logLine" {
-						pipeTask.LogLineCh <-logLineObj["logLine"].(string)
+						pipeTask.LogLineCh <-fmt.Sprintf("%s:%s",
+							logLineObj["logType"].(string),
+							logLineObj["logLine"].(string))
 					} else if typ == "logEnd" {
 						// logLine is now over
 						break
 					} else {
-						logError(FFMPEG_PREFIX, "Reading logLine, unexpected message", logLineObj)
+						logHTTPRequest(r, 599, FFMPEG_PREFIX, "Reading logLine, unexpected message", logLineObj)
 						return
 					}
 				}
 
 				if err = processFFmpegOutputs(wsConn, ffargs); err != nil {
-					logError(FFMPEG_PREFIX, "Failed to process output files:", err)
+					logHTTPRequest(r, 599, FFMPEG_PREFIX, "Failed to process output files:", err)
 					return
 				}
-				logDebug(FFMPEG_PREFIX, "Success")
+				// x99 is to just color the log
+				logHTTPRequest(r, 299, FFMPEG_PREFIX, "Successful ffmpeg task")
 
-				// Send close to close unix socket
-				close(pipeTask.LogLineCh)
-            }
+			}()
+
         }
     }
+}
+
+func pingPongFFmpegMessageOfType(wsConn *websocket.Conn, typ string, val interface{}) error {
+
+	err := writeFFmpegMessageOfType(wsConn, typ, val)
+	if err != nil {
+		return err
+	}
+	err = readFFmpegMessageOfType(wsConn, typ)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
+func writeFFmpegMessageOfType(wsConn *websocket.Conn, typ string, val interface{}) error {
+
+	data := make(map[string]interface{})
+	data["type"] = typ
+	if val != nil {
+		data[typ] = val
+	}
+	msg, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("Json marshal error %w: %v", err, data)
+	}
+	err = wsConn.WriteMessage(websocket.TextMessage, msg)
+	if err != nil {
+		return fmt.Errorf("Write error: %w", err)
+	}
+	return nil
+
+}
+
+func readFFmpegMessageOfType(wsConn *websocket.Conn, typ string) error {
+
+	typ1, _, err := parseFFmpegTextMessage(wsConn.ReadMessage())
+	if err != nil {
+		return fmt.Errorf("Reading "+typ+", Websocket read error: %w", err)
+	}
+	if typ1 != typ {
+		return fmt.Errorf("Reading "+typ+", wrong message %v", typ1)
+	}
+
+	return nil
+
 }
 
 func parseFFmpegTextMessage(msgType int, msg []byte, err error) (string, map[string]interface{}, error) {
@@ -319,11 +382,13 @@ func processFFmpegOutputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 		
 		typ, outInfoObj, err := parseFFmpegTextMessage(wsConn.ReadMessage())
 		if err != nil {
-			return fmt.Errorf("Reading logline, Websocket read error: %w", err)
+			return fmt.Errorf("Reading outInfo, Websocket read error: %w", err)
 		}
 		if typ != "outInfo" {
 			return fmt.Errorf("Malformed outInfo packet %v", outInfoObj)
 		}
+
+		logDebug(FFMPEG_PREFIX, "outInfo", outIndex)
 
 		// Read output metadata
 		outInfoIface, ok := outInfoObj["outInfo"].([]interface{})
@@ -387,6 +452,8 @@ func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 			return fmt.Errorf("Failed to stat input %s: %w", inPath, err)
 		}
 
+		logDebug(FFMPEG_PREFIX, "stat", inputIndex, inPath)
+
 		// Write the current input's index
 		infoJson, err := json.Marshal([]int64{
 			int64(inputIndex), info.Size(),
@@ -399,6 +466,8 @@ func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 			return fmt.Errorf("Failed to write to websocket [1]: %w", err)
 		}
 
+		logDebug(FFMPEG_PREFIX, "written", inputIndex)
+
 		// Wait for ok
 		typ, _, err := parseFFmpegTextMessage(wsConn.ReadMessage())
 		if err != nil {
@@ -407,6 +476,8 @@ func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 		if typ != "inputInfoOk" {
 			return fmt.Errorf("Wrong order of operation no input info ok")
 		}
+
+		logDebug(FFMPEG_PREFIX, "ok sent", inputIndex)
 
 		// Stream input file
 		in, err := os.Open(inPath)
@@ -427,6 +498,8 @@ func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 			return fmt.Errorf("Failed to flush the mssage: %w", err)
 		}
 		
+		logDebug(FFMPEG_PREFIX, "input sent", inputIndex)
+
 		// Wait for ok
 		typ, _, err = parseFFmpegTextMessage(wsConn.ReadMessage())
 		if err != nil {
@@ -459,12 +532,20 @@ func subFFmpeg(args []string) {
 	}
 	defer conn.Close()
 
-	// Send arguments to the main worker
+	// Parse arguments
 	ffargs, err := parseFFmpegArgs(args)
 	if err != nil {
 		logFatal(FFMPEG_PREFIX, "Parse argument error:", err)
 	}
 
+	// If run as ffprobe and there is only output it means it is input
+	if strings.HasSuffix(args[0], "ffprobe") &&
+		len(ffargs.Inputs) == 0 &&
+		len(ffargs.Outputs) > 0 {
+		ffargs.Inputs, ffargs.Outputs = ffargs.Outputs, ffargs.Inputs
+	}
+
+	// Send arguments to the main worker
 	ffargsJson, err := json.Marshal(ffargs)
 	if err != nil {
 		logFatal(FFMPEG_PREFIX, "Failed to marshal json", err)
@@ -476,7 +557,13 @@ func subFFmpeg(args []string) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		response := scanner.Text()
-		fmt.Println(response)
+		typ, msg := response[:6], response[7:] // Remove 6th colon e.g., stderr:
+
+		if typ == "stdout" {
+			fmt.Fprintln(os.Stdout, msg)
+		} else {
+			fmt.Fprintln(os.Stderr, msg)
+		}
 	}
 
 	if err := scanner.Err(); err != nil {

@@ -605,14 +605,17 @@ func addDefaultMimeTypes() {
 
 func main() {
 
-	fmt.Println()
 	now := time.Now()
 	gAppInfo.Start = now
+
+	// iSH compatibility
+	addDefaultMimeTypes()
 
 	// Determine if it is the main worker
 	initFFmpeg()
 
 	// Flags
+	fmt.Println()
 	parseFlag()
 
 	// Path
@@ -620,7 +623,6 @@ func main() {
 
 	// Embed
 	populateEmbedEtags()
-	addDefaultMimeTypes()
 
 	// Dirs
 	home, err := os.UserHomeDir()

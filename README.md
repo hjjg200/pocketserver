@@ -10,7 +10,7 @@ A simple server built for use on iSH, an emulated linux on iOS.
 
 - when built for iSH, CPU core limited to 1 by `runtime.GOMAXPROCS(1)`
 - requires `i686-linux-musl-gcc` for compiling
-```
+```sh
 sudo apt install gcc-multilib g++-multilib binutils-multiarch
 sudo apt install gcc-i686-linux-gnu g++-i686-linux-gnu
 make clean
@@ -31,16 +31,45 @@ sudo ln -s /usr/local/musl-1.2.5-i686/bin/musl-gcc /usr/local/bin/i686-linux-mus
 - Music player -- you can edit playlist by longpress
 - Drag and drop to upload
 - https server to go for iPhone, local network can access the server using browser
-- (Testing) pipeline iSH's ffmpeg request to ffmpeg.wasm on an http client so that it can perform better
-```bash
+- **(Unstable)** pipeline iSH's ffmpeg request to ffmpeg.wasm on an http client so that it can perform better
+```sh
 # on iSH
-ln -s .../path/to/pocketserver_ish /usr/local/bin/ffmpeg # Replace ffmpeg only, leave ffprobe as is
+ln -s .../path/to/pocketserver_ish /usr/local/bin/ffmpeg
+ln -s .../path/to/pocketserver_ish /usr/local/bin/ffprobe # Replace both ffmpeg and ffprobe 
 ffmpeg -i input.mp4 -i input.m4a ...args output.mp4
+ffprobe input.mp4
 # pocketserver_ish invoked with ffmpeg sends ffmpeg arguments via unix socket to the main worker
 # main worker then sends the arguments to any available http client via websocket
 # stream input files on iSH's end via websocket to ffmpeg.wasm
 # ffmpeg.wasm sends the resulting outputn via websocket
 # main worker writes the output file at the specified output path on iSH's end
+```
+- `yt-dlp` using ffmpeg pipelining
+    - loading python and up to printing ffmpeg version takes about 1 minute
+    - single operation of [regexp for searching youtube nsig](https://github.com/ytdl-org/youtube-dl/blob/63fb0fc4159397618b12fa115f957b9ba70f3f88/youtube_dl/extractor/youtube.py#L1775) takes about 1.5 minutes
+    - the above operation is run twice per video
+    - rest of the process takes reasonable time compared to when run on desktop
+```sh
+# for iOS devices that don't support AV1 (before M3/A17)
+yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload_date)s]%(fulltitle)s(%(id)s)' \
+ -v -c --add-metadata --concurrent-fragments 20  --retries "infinite" \
+ --merge-output-format webm \
+ --embed-metadata --write-info-json --clean-infojson \
+ --write-comments --write-subs --sub-lang all \
+ --sub-format srt --write-description --write-thumbnail \
+ --exec "ffmpeg -i {} -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p \
+ -c:a aac -q:a 1 -movflags faststart {}.h264.mp4" \
+ -S "vcodec:vp09" $URL
+
+# Line 3: Merge into webm before encoding to a compatible mp4
+#   directly merging into mp4 cannot be done
+# Line 7: Encode to a compatible mp4
+# Line 9: Use -S to priortize vp09 because ffmpeg.wasm doesn't support av1
+#   https://github.com/yt-dlp/yt-dlp?tab=readme-ov-file#sorting-formats
+#   later when ffmpeg.wasm supports av1 no need for -S option
+#   av01 > vp9.2 > vp9 > h265 > h264 > vp8 > h263 > theora > other
+#   Specify acodec if necessary
+#   flac/alac > wav/aiff > opus > vorbis > aac > mp4a > mp3 > ac4 > eac3 > ac3 > dts > other
 ```
 
 
@@ -54,13 +83,11 @@ ffmpeg -i input.mp4 -i input.m4a ...args output.mp4
 
 ## TODO
 
-- FFmpeg.wasm (decent speed on iOS safari compared to when run on iSH)
-    - if possible, tunnel input output and use iOS safari as ffmpeg backend and use yt-dlp on iSH using it as frontend
+- FFmpeg piping (iSH <-> ffmpeg.wasm)
     - video compressor
     - music sound check using transcoding instead of javascript wav method
     - music sound check run once during upload time if transcoding drains much battery
     - metadata extraction during upload time
-    - ffprobe
     - handle browser drop out, handle ffmpeg cancel
     - ...
 - log functions fix argument handling

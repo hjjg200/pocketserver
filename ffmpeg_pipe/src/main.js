@@ -13,15 +13,23 @@ import { fetchFile } from '@ffmpeg/util';
     5) Multi-job: cycle with "ready" <-> "nomore"/args.
 */
 
-const ffmpeg = new FFmpeg();
+let ffmpeg;
 
 // Global job counter to name input & output files uniquely
 let jobCounter = 0;
 
-/** Optional: track progress events for debugging. */
-ffmpeg.on('progress', (prog) => {
-  console.log(`[FFmpeg progress] frame=${prog.frame}, fps=${prog.fps}, time=${prog.time}`);
-});
+
+async function pongBackMessageOfType(socket, typ) {
+  const obj = JSON.parse(await waitForTextMessage(socket));
+  if (obj.type !== "ready") {
+    throw new Error(`Wrongly typed message, expected ${typ}, received ${obj.type}`);
+  }
+  socket.send(JSON.stringify({ type: typ }));
+  console.log(`[FFmpeg] Ping ${typ} from server, pong-backed ${typ}`);
+
+  return obj[typ] || null;
+}
+
 
 /**
  * The main multi-job loop:
@@ -34,22 +42,28 @@ ffmpeg.on('progress', (prog) => {
 async function cycleJobs(socket) {
   try {
     while (true) {
-      socket.send("ready");
-      console.log("[FFmpeg] Sent 'ready' – waiting for new ffargs or 'nomore'...");
 
-      const msg = await waitForTextMessage(socket);
-      const line = msg.trim();
+      // Ready
+      pongBackMessageOfType(socket, "ready");
 
-      if (line === "nomore") {
-        console.log("[FFmpeg] No more jobs from server, stopping cycle.");
-        break;
-      }
+      // taskReady
+      pongBackMessageOfType(socket, "taskReady");
 
       // parse the ffargs object
-      const ffargs = JSON.parse(line);
-      await flow(ffargs, socket);
+      const ffargs = pongBackMessageOfType(socket, "ffargs");
+      try {
+        ffmpeg = new FFmpeg();
+        await ffmpeg.load({
+          corePath: "/static/ffmpeg/ffmpeg-core.js",
+          classWorkerURL: "/static/ffmpeg/worker.js"
+        });
+        await flow(ffargs, socket);
+      } finally {
+        ffmpeg.terminate();
+      }
 
       console.log("[FFmpeg] Job done. Going for next job...");
+
     }
     console.log("[FFmpeg] cycleJobs ended – no more tasks.");
   } catch (err) {
@@ -65,108 +79,36 @@ async function cycleJobs(socket) {
  *   4) read each output => send to server
  */
 async function flow(ffargs, socket) {
-  jobCounter++;
 
-  // ephemeral log array
-  const jobLogs = [];
+  jobCounter++;
 
   // ephemeral log listener
   const onLog = (entry) => {
-    const logLine = entry.message;
-    jobLogs.push(logLine);
+    const msg = JSON.stringify({
+      type: "logLine",
+      logType: entry.type,
+      logLine: entry.message });
     // Also stream each line to server
-    socket.send(JSON.stringify({ type: "logLine", logLine }));
+    socket.send(msg);
   };
 
   // Make a local copy of arguments that we can patch in-place
   const safeArgs = ffargs.args.slice();
 
+  // 2A) determine if ffprobe or ffmpeg
+  let isFfprobe = false;
+  if (ffargs.args[0].endsWith("ffprobe")) {
+    isFfprobe = true;
+
+    console.log(`[FFmpeg] works as ffprobe`);
+  }
+
   // 1) Receive & write input files, using ASCII-safe names
   const inputMap = {};
-  /*
-  let i = 0;
-  let fileSizes = {};
-  const inputPromise = new Promise((resolve, reject) => {
-  
-    if (ffargs.inputs.length == 0) {
-      resolve();
-      return;
-    }
-
-    const onMessage = async (evt) => {
-
-      if (typeof evt.data === "string") {
-        const inputIndex = ffargs.inputs[i];
-        const metaStr = evt.data;
-        const [recvIndex, fileSize] = JSON.parse(metaStr);
-        if (recvIndex !== inputIndex) {
-          throw new Error(`Index mismatch: got ${recvIndex}, expected ${inputIndex}`);
-        }
-        console.log(`[FFmpeg] expecting input #${recvIndex} size=${fileSize}`);
-
-        fileSizes[inputIndex] = fileSize;
-
-        const inputInfoOk = JSON.stringify({ type: "inputInfoOk" });
-        socket.send(inputInfoOk);
-        
-      } else {
-
-        const inputIndex = ffargs.inputs[i];
-        const realName = ffargs.args[inputIndex];
-        const fileSize = fileSizes[inputIndex];
-        const ext = guessExtension(realName);
-
-        // e.g. "job2_input0.mp4"
-        const safeIn = `job${jobCounter}_input${i}${ext}`;
-        console.log(`[FFmpeg] receiving input #${inputIndex} => ${safeIn}`);
-
-        let received = 0;
-        const chunks = [];
-        while (received < fileSize) {
-          const chunk = await waitForBinaryMessage(socket);
-          chunks.push(chunk);
-          received += chunk.length;
-          console.log(`[FFmpeg] got chunk size=${chunk.length}, total so far=${received}/${fileSize}`);
-        }
-        return mergeChunks(chunks, received);
-        
-        const abuf = await evt.data.arrayBuffer();
-        const fileData = new Uint8Array(abuf);
-        await ffmpeg.writeFile(safeIn, fileData);
-  
-        // Patch safeArgs so it references the safeIn path
-        inputMap[inputIndex] = safeIn;
-        safeArgs[inputIndex] = safeIn;
-
-        const inputOk = JSON.stringify({ type: "inputOk" });
-        socket.send(inputOk);
-        
-        i++;
-  
-        // if it is the last file
-        if (i >= ffargs.inputs.length)
-          resolve();
-      }
-
-    }
-    const onErr = (err) => { cleanup(); reject(err); };
-    const onClose = () => { cleanup(); reject(new Error("[FFmpeg] socket closed (text)")); };
-
-    function cleanup () {
-      socket.removeEventListener("message", onMessage);
-      socket.removeEventListener("error", onErr);
-      socket.removeEventListener("close", onClose);
-    }
-
-    socket.addEventListener("message", onMessage);
-    socket.addEventListener("error", onErr);
-    socket.addEventListener("close", onClose);
-  });
-  await inputPromise;*/
-
   for (let i = 0; i < ffargs.inputs.length; i++) {
     const inputIndex = ffargs.inputs[i];
 
+    console.log(`[FFmpeg] wait for input ${inputIndex}`);
     // Wait for a text message describing the file's size
     const metaStr = await waitForTextMessage(socket);
     const [recvIndex, fileSize] = JSON.parse(metaStr);
@@ -174,6 +116,7 @@ async function flow(ffargs, socket) {
       throw new Error(`Index mismatch: got ${recvIndex}, expected ${inputIndex}`);
     }
     socket.send(JSON.stringify({ type: "inputInfoOk" }));
+    console.log(`[FFmpeg] inputInfoOk ${inputIndex}`);
 
     const realName = ffargs.args[recvIndex];
     const ext = guessExtension(realName);
@@ -187,6 +130,7 @@ async function flow(ffargs, socket) {
     await ffmpeg.writeFile(safeIn, fileData);
 
     socket.send(JSON.stringify({ type: "inputOk" }));
+    console.log(`[FFmpeg] inputOk ${inputIndex}`);
 
     // Patch safeArgs so it references the safeIn path
     inputMap[recvIndex] = safeIn;
@@ -213,14 +157,8 @@ async function flow(ffargs, socket) {
   ffmpeg.on("log", onLog);
 
   try {
-    // 2A) determine if ffprobe or ffmpeg
-    let isFfprobe = false;
-    if (ffargs.args[0].endsWith("ffprobe")) {
-      isFfprobe = true;
-    }
-
     // We'll skip the first argument if it ends with "ffmpeg" or "ffprobe"
-    const callArgs = skipFirstIfNeeded(safeArgs);
+    const callArgs = safeArgs.slice(1);
 
     // 2B) run
     if (isFfprobe) {
@@ -236,6 +174,7 @@ async function flow(ffargs, socket) {
     // 2C) send log end
     const logEnd = JSON.stringify({ type: "logEnd" });
     socket.send(logEnd);
+    console.log("[FFmpeg] logEnd");
 
     // 3) read each output from FS
     for (let i = 0; i < ffargs.outputs.length; i++) {
@@ -253,7 +192,6 @@ async function flow(ffargs, socket) {
         continue;
       }
       // read it
-      console.log("dc", await ffmpeg.listDir("/"), safePath)
       const outData = await ffmpeg.readFile(safePath);
       console.log(`[FFmpeg] Output #${i}, original index ${outIndex}, size: ${outData.length} bytes`);
       // send meta + data
@@ -269,12 +207,12 @@ async function flow(ffargs, socket) {
 
     // 4) remove inputs from FS
     for (const safeIn of Object.values(inputMap)) {
-      try { ffmpeg.FS("unlink", safeIn); } catch(e){}
+      try { ffmpeg.deleteFile(safeIn); } catch(e){}
     }
 
     // remove outputs from FS
     for (const safeOut of Object.values(outMap)) {
-      try { ffmpeg.FS("unlink", safeOut); } catch(e){}
+      try { ffmpeg.deleteFile(safeOut); } catch(e){}
     }
   }
 }
@@ -290,18 +228,6 @@ function guessExtension(filePath) {
   return filePath.substring(i);
 }
 
-/**
- * skipFirstIfNeeded: if the first argument ends with 'ffmpeg' or 'ffprobe',
- * strip it out. Otherwise return the array unchanged.
- */
-function skipFirstIfNeeded(args) {
-  if (!args.length) return args;
-  const first = args[0];
-  if (first.endsWith("ffmpeg") || first.endsWith("ffprobe")) {
-    return args.slice(1);
-  }
-  return args;
-}
 
 /* multi-job approach from earlier: send "ready", if "nomore" => break, else parse => flow(...) */
 async function mainLoop(socket) {
@@ -316,18 +242,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   socket.addEventListener("open", async () => {
     console.log("[FFmpeg] WebSocket open. Loading ffmpeg core...");
-    await ffmpeg.load({
-      corePath: "/static/ffmpeg/ffmpeg-core.js",
-      classWorkerURL: "/static/ffmpeg/worker.js"
-    });
     console.log("[FFmpeg] ffmpeg core loaded. Starting job cycle...");
     mainLoop(socket);
   });
 
+  let queue = [];
+  let resolve;
+  socket.shift = async () => {
+    if (queue.length > 0) return queue.shift();
+    return await new Promise((queueResolve) => {
+      resolve = queueResolve;
+    });
+  };
+
+  socket.addEventListener("message", (ev) => {
+    if (resolve !== null) {
+      resolve(ev);
+      resolve = null;
+      return;
+    }
+    queue.push(ev);
+  });
   socket.addEventListener("close", (ev) => {
+    queue = [];
     console.log("[FFmpeg] WebSocket closed:", ev);
   });
   socket.addEventListener("error", (err) => {
+    queue = [];
     console.error("[FFmpeg] WebSocket error:", err);
   });
 });
@@ -336,16 +277,42 @@ document.addEventListener('DOMContentLoaded', async () => {
    The waitForTextMessage, receiveBinary, etc. for chunked input.
 ------------------------------------------------------------------- */
 
+async function waitForTextMessage(socket) {
+  const msg = await socket.shift();
+  if (typeof msg.data !== "string")
+    throw new Error("Binary given, expected text");
+  return msg.data;
+}
 
+async function waitForBinaryMessage(socket) {
+  const msg = await socket.shift();
+  if (typeof msg.data === "string")
+    throw new Error("Text given, expected binary");
+  const abuf = await msg.data.arrayBuffer();
+  return new Uint8Array(abuf);
+}
 
-function waitForTextMessage(socket) {
+async function receiveBinary(socket, fileSize) {
+  let received = 0;
+  const chunks = [];
+  while (received < fileSize) {
+    const chunk = await waitForBinaryMessage(socket);
+    chunks.push(chunk);
+    received += chunk.length;
+    console.log(`[FFmpeg] got chunk size=${chunk.length}, total so far=${received}/${fileSize}`);
+  }
+  return mergeChunks(chunks, received);
+}
+
+function waitForTextMessage2(socket) {
   return new Promise((resolve, reject) => {
     const onMessage = (evt) => {
       if (typeof evt.data === "string") {
         cleanup();
         resolve(evt.data);
       } else {
-        console.warn("[FFmpeg] ignoring binary while expecting text msg");
+        cleanup();
+        reject("[FFmpeg] binary given while expecting text");
       }
     };
     const onErr = (err) => { cleanup(); reject(err); };
@@ -363,23 +330,13 @@ function waitForTextMessage(socket) {
   });
 }
 
-async function receiveBinary(socket, fileSize) {
-  let received = 0;
-  const chunks = [];
-  while (received < fileSize) {
-    const chunk = await waitForBinaryMessage(socket);
-    chunks.push(chunk);
-    received += chunk.length;
-    console.log(`[FFmpeg] got chunk size=${chunk.length}, total so far=${received}/${fileSize}`);
-  }
-  return mergeChunks(chunks, received);
-}
 
-function waitForBinaryMessage(socket) {
+function waitForBinaryMessage2(socket) {
   return new Promise((resolve, reject) => {
     const onMessage = async (evt) => {
       if (typeof evt.data === "string") {
-        console.warn("[FFmpeg] ignoring text while expecting binary");
+        cleanup();
+        reject("[FFmpeg] text given while expecting binary");
         return;
       }
       cleanup();
