@@ -140,7 +140,7 @@ a {
     padding-right: 2rem;
 }
 .upload-info-container.error {
-    color: #fd604e;
+    color: var(--cl-error-text);
 }
 .upload-info-container.error .progress-bar {
     background: var(--cl-error-area);

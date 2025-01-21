@@ -48,9 +48,9 @@ ffprobe input.mp4
     - loading python and up to printing ffmpeg version takes about 1 minute
     - single operation of [regexp for searching youtube nsig](https://github.com/ytdl-org/youtube-dl/blob/63fb0fc4159397618b12fa115f957b9ba70f3f88/youtube_dl/extractor/youtube.py#L1775) takes about 1.5 minutes
     - the above operation is run twice per video
-    - rest of the process takes reasonable time compared to when run on desktop
+    - rest of the process takes reasonable time compared to when run on desktop unless it invloves encoding
 ```sh
-# for iOS devices that don't support AV1 (before M3/A17)
+# [1] Compatible mp4 for iOS devices that don't support AV1 (before M3/A17)
 yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload_date)s]%(fulltitle)s(%(id)s)' \
  -v -c --add-metadata --concurrent-fragments 20  --retries "infinite" \
  --merge-output-format webm \
@@ -70,6 +70,17 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 #   av01 > vp9.2 > vp9 > h265 > h264 > vp8 > h263 > theora > other
 #   Specify acodec if necessary
 #   flac/alac > wav/aiff > opus > vorbis > aac > mp4a > mp3 > ac4 > eac3 > ac3 > dts > other
+
+# [2] Safari WebM for iOS devices that don't support AV1 (before M3/A17)
+yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload_date)s]%(fulltitle)s(%(id)s)' \
+ -v -c --add-metadata --concurrent-fragments 20  --retries "infinite" \
+ --merge-output-format webm \
+ --embed-metadata --write-info-json --clean-infojson \
+ --write-comments --write-subs --sub-lang all \
+ --sub-format srt --write-description --write-thumbnail \
+ -S "vcodec:vp09" $URL
+
+# They are likely to still support vp9 on **safari**
 ```
 
 

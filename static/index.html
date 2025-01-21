@@ -11,6 +11,7 @@
 :root {
     --pad-lr-media: 1.6rem;
     --cl-success-area: #5c7;
+    --cl-error-text: #fd604e;
     --cl-error-area: #ff5b45;
 }
 
@@ -370,6 +371,41 @@ input#cache-album {
     font-size: 0.8rem;
 }
 
+
+
+.ffmpeg-log-container {
+    padding: 0.5rem 1rem 1rem 1rem;
+    display: none;
+}
+.ffmpeg-log {
+    padding: .5rem;
+    border: 1px solid #ddd;
+    height: 12rem;
+    overflow-y: scroll;
+    overflow-x: hidden;
+    max-height: 50vh;
+    font-size: 0.85rem;
+}
+@media (max-width: 45rem) {
+    .ffmpeg-log {
+        height: 24rem;
+        font-size: 0.4rem;
+    }
+}
+.ffmpeg-log span {
+    display: block;
+    font-family: monospace;
+    line-height: 1.15;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+.ffmpeg-log span.error {
+    color: var(--cl-error-text);
+}
+.ffmpeg-log span.internal {
+    color: #004ae8;
+}
+
         </style>
     </head>
     <body>
@@ -415,6 +451,11 @@ input#cache-album {
                 <div class="progress-info">
                     <span class="speed">12.34 MB/s</span>
                     <span class="time">00:04</span>
+                </div>
+            </div>
+
+            <div class="ffmpeg-log-container">
+                <div class="ffmpeg-log">
                 </div>
             </div>
 
@@ -517,50 +558,44 @@ document.addEventListener("DOMContentLoaded", () => {
     checkServer();
 });
 
-/*
-(() => {
 
-    // FFmpeg websocket
-    // WebSocket URL (adjust based on your server)
-    const wsProtocol = window.location.protocol === "https:" ? "wss://" : "ws://";
-    const wsUrl = `${wsProtocol}${window.location.host}/ws/ffmpeg`;
+(() => { // FFMPEG
 
-    // Open a WebSocket connection
-    const socket = new WebSocket(wsUrl);
+    const maxFFmpegLogCount = 200;
 
-    // Connection opened
-    socket.addEventListener("open", () => {
-        console.log("WebSocket connection established");
+    const ffmpegLogContainerEl = document.querySelector(".ffmpeg-log-container");
+    const ffmpegLogEl = document.querySelector(".ffmpeg-log");
+    window.ffmpegLog = (typ, ...args) => {
+        const spans = Array.from(ffmpegLogEl.querySelectorAll("span"));
+        const span = createElement("span", typ);
 
-        // Send "ready" message to indicate the browser is ready for processing
-        socket.send("ready\n");
-        console.log("Sent: ready");
-    });
-
-    // Listen for messages from the server
-    socket.addEventListener("message", (event) => {
-        console.log("Received from server:", event.data);
-
-        // Example: Parse and process server response
-        const args = JSON.parse(event.data);
-        if (args) {
-            console.log("Processing arguments:", args);
+        // Handle carriage return
+        let msg = args.join(" ");
+        const cr = msg.lastIndexOf("\r");
+        if (cr !== -1) {
+            msg = msg.slice(cr);
+            //spans.pop().remove();
         }
-    });
 
-    // Handle errors
-    socket.addEventListener("error", (error) => {
-        console.error("WebSocket error:", error);
-    });
+        //
+        if (typ !== "internal")
+            msg = "[FFmpeg] " + msg;
 
-    // Handle connection closure
-    socket.addEventListener("close", (event) => {
-        console.log("WebSocket connection closed:", event);
-    });
+        span.textContent = msg;
 
+        // Remove excessive logs
+        while (spans.length > maxFFmpegLogCount-1)
+            spans.shift().remove();
+
+        ffmpegLogEl.appendChild(span);
+        ffmpegLogEl.scrollTo({ top: ffmpegLogEl.scrollHeight, behavior: "smooth" });
+    };
+    window.ffmpegLogShow = () => {
+        ffmpegLogContainerEl.style.display = "block";
+    };
 
 })();
-*/
+
 
 
 
