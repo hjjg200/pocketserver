@@ -59,6 +59,9 @@ async function cycleJobs(socket) {
         });
         ffmpegLogShow();
         await flow(ffargs, socket);
+      } catch (err) {
+        ffmpegLog("error", "flow error:", err);
+        return;
       } finally {
         ffmpeg.terminate();
       }
@@ -66,7 +69,6 @@ async function cycleJobs(socket) {
       ffmpegLog("info", "Job done. Going for next job...");
 
     }
-    ffmpegLog("info", "cycleJobs ended – no more tasks.");
   } catch (err) {
     ffmpegLog("error", "cycleJobs error:", err);
   }
@@ -234,47 +236,77 @@ function guessExtension(filePath) {
 
 
 /* multi-job approach from earlier: send "ready", if "nomore" => break, else parse => flow(...) */
-async function mainLoop(socket) {
-  await cycleJobs(socket);
-  ffmpegLog("info", "All jobs completed or 'nomore'.");
+async function mainLoop() {
+
+  while (true) {
+      
+    const wsProtocol = (location.protocol === "https:") ? "wss://" : "ws://";
+    const socketURL = wsProtocol + location.host + "/ws/ffmpeg";
+    const socket = new WebSocket(socketURL);
+
+    let promise0, resolver0;
+    let promise1;
+    promise0 = new Promise(resolve => resolver0 = resolve);
+    socket.addEventListener("open", async () => {
+      ffmpegLog("info", "WebSocket for ffmpeg open");
+      promise1 = cycleJobs(socket);
+      resolver0();
+    });
+
+    let closed = false;
+
+    let messageQueue = [];
+    let pairQueue = [];
+
+    function close() {
+      closed = true;
+      while (pairQueue.length) {
+        const { reject } = pairQueue.shift();
+        reject(new Error("Socket closed"));
+      }
+      resolver0();
+    }
+
+    socket.shift = async () => {
+      if (closed) {
+        throw new Error("Socket closed");
+      }
+      if (messageQueue.length > 0) return messageQueue.shift();
+      return new Promise((resolve, reject) => {
+        pairQueue.push({ resolve, reject });
+      });
+    };
+
+    socket.addEventListener("message", (ev) => {
+      const { resolve } = pairQueue.shift() || {};
+      if (resolve) {
+        resolve(ev);
+        return;
+      }
+      messageQueue.push(ev);
+    });
+    socket.addEventListener("close", (ev) => {
+      ffmpegLog("error", "WebSocket closed:", ev);
+      close();
+
+      messageQueue = [];
+      pairQueue = [];
+    });
+    socket.addEventListener("error", (err) => {
+      ffmpegLog("error", "WebSocket error:", err);
+      socket.close();
+    });
+
+    await promise0;
+    await promise1;
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+  }
+
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const wsProtocol = (location.protocol === "https:") ? "wss://" : "ws://";
-  const socketURL = wsProtocol + location.host + "/ws/ffmpeg";
-  const socket = new WebSocket(socketURL);
-
-  socket.addEventListener("open", async () => {
-    ffmpegLog("info", "WebSocket open. Loading ffmpeg core...");
-    ffmpegLog("info", "ffmpeg core loaded. Starting job cycle...");
-    mainLoop(socket);
-  });
-
-  let queue = [];
-  let resolve;
-  socket.shift = async () => {
-    if (queue.length > 0) return queue.shift();
-    return await new Promise((queueResolve) => {
-      resolve = queueResolve;
-    });
-  };
-
-  socket.addEventListener("message", (ev) => {
-    if (resolve !== null) {
-      resolve(ev);
-      resolve = null;
-      return;
-    }
-    queue.push(ev);
-  });
-  socket.addEventListener("close", (ev) => {
-    queue = [];
-    ffmpegLog("error", "WebSocket closed:", ev);
-  });
-  socket.addEventListener("error", (err) => {
-    queue = [];
-    ffmpegLog("error", "WebSocket error:", err);
-  });
+  mainLoop();
 });
 
 /* -------------------------------------------------------------------
@@ -308,59 +340,6 @@ async function receiveBinary(socket, fileSize) {
   return mergeChunks(chunks, received);
 }
 
-function waitForTextMessage2(socket) {
-  return new Promise((resolve, reject) => {
-    const onMessage = (evt) => {
-      if (typeof evt.data === "string") {
-        cleanup();
-        resolve(evt.data);
-      } else {
-        cleanup();
-        reject("binary given while expecting text");
-      }
-    };
-    const onErr = (err) => { cleanup(); reject(err); };
-    const onClose = () => { cleanup(); reject(new Error("socket closed (text)")); };
-
-    function cleanup() {
-      socket.removeEventListener("message", onMessage);
-      socket.removeEventListener("error", onErr);
-      socket.removeEventListener("close", onClose);
-    }
-
-    socket.addEventListener("message", onMessage);
-    socket.addEventListener("error", onErr);
-    socket.addEventListener("close", onClose);
-  });
-}
-
-
-function waitForBinaryMessage2(socket) {
-  return new Promise((resolve, reject) => {
-    const onMessage = async (evt) => {
-      if (typeof evt.data === "string") {
-        cleanup();
-        reject("text given while expecting binary");
-        return;
-      }
-      cleanup();
-      const abuf = await evt.data.arrayBuffer();
-      resolve(new Uint8Array(abuf));
-    };
-    const onErr = (err) => { cleanup(); reject(err); };
-    const onClose = () => { cleanup(); reject(new Error("socket closed (binary)")); };
-
-    function cleanup() {
-      socket.removeEventListener("message", onMessage);
-      socket.removeEventListener("error", onErr);
-      socket.removeEventListener("close", onClose);
-    }
-
-    socket.addEventListener("message", onMessage);
-    socket.addEventListener("error", onErr);
-    socket.addEventListener("close", onClose);
-  });
-}
 
 function mergeChunks(chunks, totalSize) {
   const out = new Uint8Array(totalSize);

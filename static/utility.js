@@ -297,7 +297,9 @@ function createSlider(slider, initialValue, updateOnDrag, callback, binder) {
     callback(initialValue);
 }
 
-
+function getRem() {
+    return parseFloat(getComputedStyle(document.documentElement).fontSize);
+}
 
 function formatDuration(durationString) {
     try {

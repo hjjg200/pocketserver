@@ -344,12 +344,14 @@ async function cycleJobs(socket) {
         });
         ffmpegLogShow();
         await flow(ffargs, socket);
+      } catch (err) {
+        ffmpegLog("error", "flow error:", err);
+        return;
       } finally {
         ffmpeg.terminate();
       }
       ffmpegLog("info", "Job done. Going for next job...");
     }
-    ffmpegLog("info", "cycleJobs ended \u2013 no more tasks.");
   } catch (err) {
     ffmpegLog("error", "cycleJobs error:", err);
   }
@@ -462,43 +464,64 @@ function guessExtension(filePath) {
   if (i < 0) return ".dat";
   return filePath.substring(i);
 }
-async function mainLoop(socket) {
-  await cycleJobs(socket);
-  ffmpegLog("info", "All jobs completed or 'nomore'.");
+async function mainLoop() {
+  while (true) {
+    let close = function() {
+      closed = true;
+      while (pairQueue.length) {
+        const { reject } = pairQueue.shift();
+        reject(new Error("Socket closed"));
+      }
+      resolver0();
+    };
+    const wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
+    const socketURL = wsProtocol + location.host + "/ws/ffmpeg";
+    const socket = new WebSocket(socketURL);
+    let promise0, resolver0;
+    let promise1;
+    promise0 = new Promise((resolve) => resolver0 = resolve);
+    socket.addEventListener("open", async () => {
+      ffmpegLog("info", "WebSocket for ffmpeg open");
+      promise1 = cycleJobs(socket);
+      resolver0();
+    });
+    let closed = false;
+    let messageQueue = [];
+    let pairQueue = [];
+    socket.shift = async () => {
+      if (closed) {
+        throw new Error("Socket closed");
+      }
+      if (messageQueue.length > 0) return messageQueue.shift();
+      return new Promise((resolve, reject) => {
+        pairQueue.push({ resolve, reject });
+      });
+    };
+    socket.addEventListener("message", (ev) => {
+      const { resolve } = pairQueue.shift() || {};
+      if (resolve) {
+        resolve(ev);
+        return;
+      }
+      messageQueue.push(ev);
+    });
+    socket.addEventListener("close", (ev) => {
+      ffmpegLog("error", "WebSocket closed:", ev);
+      close();
+      messageQueue = [];
+      pairQueue = [];
+    });
+    socket.addEventListener("error", (err) => {
+      ffmpegLog("error", "WebSocket error:", err);
+      socket.close();
+    });
+    await promise0;
+    await promise1;
+    await new Promise((resolve) => setTimeout(resolve, 5e3));
+  }
 }
 document.addEventListener("DOMContentLoaded", async () => {
-  const wsProtocol = location.protocol === "https:" ? "wss://" : "ws://";
-  const socketURL = wsProtocol + location.host + "/ws/ffmpeg";
-  const socket = new WebSocket(socketURL);
-  socket.addEventListener("open", async () => {
-    ffmpegLog("info", "WebSocket open. Loading ffmpeg core...");
-    ffmpegLog("info", "ffmpeg core loaded. Starting job cycle...");
-    mainLoop(socket);
-  });
-  let queue = [];
-  let resolve;
-  socket.shift = async () => {
-    if (queue.length > 0) return queue.shift();
-    return await new Promise((queueResolve) => {
-      resolve = queueResolve;
-    });
-  };
-  socket.addEventListener("message", (ev) => {
-    if (resolve !== null) {
-      resolve(ev);
-      resolve = null;
-      return;
-    }
-    queue.push(ev);
-  });
-  socket.addEventListener("close", (ev) => {
-    queue = [];
-    ffmpegLog("error", "WebSocket closed:", ev);
-  });
-  socket.addEventListener("error", (err) => {
-    queue = [];
-    ffmpegLog("error", "WebSocket error:", err);
-  });
+  mainLoop();
 });
 async function waitForTextMessage(socket) {
   const msg = await socket.shift();
