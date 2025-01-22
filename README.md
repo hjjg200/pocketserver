@@ -84,15 +84,16 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 # It's likely that they support vp9 on **safari**
 ```
 - test results of ffmpeg encodings on different browsers
-    |Codec|Chrome[^1]|Safari[^2]|
-    |-|-|-|
-    |`x264->x265`|❌|✅|
-    |`x265->x264`|❌|✅|
-    |`vp9->x265`|❌|✅|
-    |`vp9->x264`|❌|✅|
-    |`x265->vp9`|❌|❌|
+    |Codec|Chrome[^1]|Safari[^2]|Firefox[^3]|
+    |-|-|-|-|
+    |`x264->x265`|❌|✅|✅|
+    |`x265->x264`|❌|✅|✅|
+    |`vp9->x265`|❌|✅|✅|
+    |`vp9->x264`|❌|✅|✅|
+    |`x265->vp9`|❌|❌|❌|
     [^1]: windows amd64 chrome 131 24 threads
     [^2]: iOS safari a14 bionic
+    [^3]: windows amd64 firefox 134 24 threads
 
 
 ## Safari specific notes
