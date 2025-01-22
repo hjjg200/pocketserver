@@ -228,13 +228,7 @@ func (cache *metadataCache) _update() {
 			mm1[base].MimeCategory == MIME_VIDEO ||
 			ext == ".webp" {
 			
-			if mm1[base].Details != nil {
-				if d, ok := mm1[base].Details["duration"]; ok && d == "" {
-					cache.ensureMetadataDetails(fullpath, mm1[base])
-				}
-			} else {
-				cache.ensureMetadataDetails(fullpath, mm1[base])
-			}
+			cache.ensureMetadataDetails(fullpath, mm1[base])
 
 		}
 
@@ -325,6 +319,10 @@ func (cache *metadataCache) checkMetadataDetails(fullpath string, meta *Metadata
 	thumbpath := metapath + META_EXT_THUMB
 	smallpath := metapath + META_EXT_THUMB_SMALL
 
+	if d, ok := meta.Details["duration"]; !ok || d == "" {
+		return false
+	}
+
 	txt, err := os.ReadFile(txtpath)
 	if err != nil {
 		return false
@@ -366,11 +364,6 @@ func (cache *metadataCache) scheduleMetadataDetails(fullpath string, meta *Metad
 
 		cache.mgr.bakeSem.Acquire()
 		defer cache.mgr.bakeSem.Release()
-
-		if cache.checkMetadataDetails(fullpath, meta) {
-			logWarn("Another goroutine already baked metadata for", fullpath)
-			return
-		}
 
 		err := cache.mgr.bakeMetadataDetails(fullpath, meta)
 		if err != nil {
