@@ -4,6 +4,7 @@ import (
 	"time"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"path/filepath"
 	"os"
 	"strings"
@@ -12,8 +13,6 @@ import (
 )
 
 type Metadata struct {
-	mu				sync.Mutex
-
 	ModTime			time.Time `json:"modTime"`
 	Size			int64     `json:"size"`
 	IsDir			bool      `json:"isDir"`
@@ -33,8 +32,7 @@ type metadataCache struct {
 	body			MetadataBody
 	bodyMu			sync.Mutex
 	detailsWg		sync.WaitGroup
-	detailsMu		sync.Mutex
-	json			[]byte
+	json			atomic.Pointer[[]byte]
 	dir				string
 
 	update			func()
@@ -59,7 +57,7 @@ func NewMetadataManager() *MetadataManager {
 
 }
 
-func (mgr *MetadataManager) Get(dir string, cached bool) ([]byte, bool) {
+func (mgr *MetadataManager) Get(dir string) ([]byte, bool) {
 
 	mgr.cacheMapMu.RLock()
 	defer mgr.cacheMapMu.RUnlock()
@@ -69,7 +67,7 @@ func (mgr *MetadataManager) Get(dir string, cached bool) ([]byte, bool) {
 		return nil, false
 	}
 
-	return cache.get(cached), true
+	return *cache.json.Load(), true
 
 }
 
@@ -79,27 +77,12 @@ func (cache *metadataCache) updateJson() {
 	if err != nil {
 		panic(err)
 	}
-	cache.json = data
+	cache.json.Store(&data)
 
 	err = os.WriteFile(cache.mgr.formatDirCacheName(cache.dir), data, 0644)
 	if err != nil {
 		logError("Failed to write cache file", cache.dir)
 	}
-
-}
-
-func (cache *metadataCache) get(cached bool) ([]byte) {
-	
-	if cached == false {
-		cache.detailsMu.Lock() // Use mutex to prevent racing of waiting Wait
-		cache.detailsWg.Wait()
-		cache.detailsMu.Unlock()
-	}
-
-	cache.bodyMu.Lock()
-	defer cache.bodyMu.Unlock()
-
-	return cache.json
 
 }
 
@@ -180,7 +163,7 @@ func (mgr *MetadataManager) AddDir(dir string) {
 		return
 	}
 
-	cache.json = data
+	cache.json.Store(&data)
 	err = json.Unmarshal(data, &cache.body)
 	if err != nil {
 		logFatal("Failed to read cached data for", dir)
@@ -296,20 +279,10 @@ func (cache *metadataCache) _update() {
 
 	logInfo("Updated cache of", dir, "-", added, "added,", modified, "modified,", removed, "removed")
 
-	if added != 0 || modified != 0 || removed != 0 {
-		cache.updateJson()
-	}
+	cache.detailsWg.Wait()
+	cache.updateJson()
 
 	cache.bodyMu.Unlock()
-
-	go func() {
-		cache.detailsMu.Lock() // TODO fix
-		cache.detailsWg.Wait()
-		cache.bodyMu.Lock()
-		cache.updateJson()
-		cache.bodyMu.Unlock()
-		cache.detailsMu.Unlock()
-	}()
 
 }
 
@@ -335,9 +308,6 @@ func (mgr *MetadataManager) UpdateDir(dir string) error {
 func (cache *metadataCache) ensureMetadataDetails(fullpath string, meta *Metadata) {
 
 	cache.detailsWg.Add(1)
-
-	meta.mu.Lock()
-	defer meta.mu.Unlock()
 
 	if cache.checkMetadataDetails(fullpath, meta) == false {
 		cache.scheduleMetadataDetails(fullpath, meta)
@@ -396,9 +366,6 @@ func (cache *metadataCache) scheduleMetadataDetails(fullpath string, meta *Metad
 
 		cache.mgr.bakeSem.Acquire()
 		defer cache.mgr.bakeSem.Release()
-
-		meta.mu.Lock()
-		defer meta.mu.Unlock()
 
 		if cache.checkMetadataDetails(fullpath, meta) {
 			logWarn("Another goroutine already baked metadata for", fullpath)
