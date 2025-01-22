@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"mime"
 	"strings"
+	"errors"
+	"sync/atomic"
 
     "github.com/gorilla/websocket"
 )
@@ -19,12 +21,13 @@ const FFMPEG_PREFIX = "[FFmpeg]"
 
 
 func initFFmpeg() {
-	arg0 := filepath.Base(os.Args[0])
+	arg0	:= filepath.Base(os.Args[0])
+	ext		:= filepath.Ext(arg0)
+	arg0	= arg0[:len(arg0)-len(ext)]
 
 	// Check if the program is invoked as "ffmpeg" or the main app
-	if (len(os.Args) > 1 &&
-		strings.HasSuffix(arg0, "ffmpeg") ||
-		strings.HasSuffix(arg0, "ffprobe")) {
+	if len(os.Args) > 1 &&
+		(arg0 == "ffmpeg" || arg0 == "ffprobe") {
 		subFFmpeg(os.Args)
 		os.Exit(0)
 	} else {
@@ -37,6 +40,7 @@ func initFFmpeg() {
 type FFmpegPipeTask struct {
 	FFargsJson string
 	LogLineCh chan string
+	WsConn atomic.Pointer[websocket.Conn]
 }
 
 
@@ -55,7 +59,7 @@ type FFmpegArgs struct {
 func parseFFmpegArgs(args []string) (*FFmpegArgs, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("error getting cwd: %v", err)
+		return nil, fmt.Errorf("error getting cwd: %w", err)
 	}
 
 	res := &FFmpegArgs{
@@ -67,7 +71,8 @@ func parseFFmpegArgs(args []string) (*FFmpegArgs, error) {
 
 	lastWasDashI := false
 
-	for i := 0; i < len(args); i++ {
+	// Ignore 0th argument
+	for i := 1; i < len(args); i++ {
 		arg := args[i]
 		if strings.HasPrefix(arg, "-") {
 			// It's a flag
@@ -145,7 +150,7 @@ func makeFFmpegHandler() http.HandlerFunc {
 
     // Channel used to pass “args” from the Unix socket connections
     // to the WebSocket connections.
-    ch := make(chan FFmpegPipeTask, 10)
+    ch := make(chan *FFmpegPipeTask, 10)
 
     // Goroutine to accept Unix socket connections
 	go func() {
@@ -163,26 +168,89 @@ func makeFFmpegHandler() http.HandlerFunc {
 				defer conn.Close()
 			
 				// Read input from the subordinate
-				scanner := bufio.NewScanner(conn)
-				for scanner.Scan() {
-					ffargsJson := scanner.Text()
-					logDebug(FFMPEG_PREFIX, "Received json of arguments:", ffargsJson)
-
-					logLineCh := make(chan string)
-					ch <-FFmpegPipeTask{
-						ffargsJson, logLineCh,
-					}
-
-					// Wait for the task's log
-					for logLine := range logLineCh {
-						fmt.Fprintln(conn, logLine)
-					}
+				reader := bufio.NewReader(conn)
+				streamType, msgLen, err := readSimplePayloadHeader(reader)
+				if streamType != "ffargsJson" {
+					logError(FFMPEG_PREFIX, "Wrong protocol for ffargs:", streamType)
+					return
+				}
+				payload := make([]byte, msgLen)
+				_, err = io.ReadFull(reader, payload)
+				if err != nil {
+					logError(FFMPEG_PREFIX, "failed to read payload:", err)
 					return
 				}
 			
-				if err := scanner.Err(); err != nil {
-					logInfo(FFMPEG_PREFIX, "Scanner error:", err)
+				ffargsJson := string(payload)
+				logDebug(FFMPEG_PREFIX, "UNIX CONN, Received json of arguments:", ffargsJson)
+
+				subAbort := make(chan struct{})
+				subAborted := false
+				go func() {
+					// Any read from this point indicates close
+					p := make([]byte, 1)
+					conn.Read(p)
+					subAborted = true
+					subAbort <-struct{}{}
+				}()
+
+				RetryLoop:
+				for {
+
+					logLineCh := make(chan string)
+					pipeTask := &FFmpegPipeTask{
+						FFargsJson: ffargsJson, LogLineCh: logLineCh,
+					}
+					ch <-pipeTask
+					logDebug(FFMPEG_PREFIX, "Queued pipeTask")
+
+					logLines := []string{}
+					// Wait for the task's log
+					// TODO use select for separated channels for logging and signal
+					SelectLoop:
+					for {
+						select {
+						case <-subAbort:
+							wsConn := pipeTask.WsConn.Load()
+							if wsConn != nil {
+								wsConn.Close()
+							}
+	
+						case logLine, ok := <-logLineCh:
+
+							if !ok {
+								break SelectLoop
+							}
+	
+							switch logLine {
+							case FFMPEG_WS_SOCKET_CLOSED:
+								close(logLineCh)
+								if subAborted {
+									logDebug(FFMPEG_PREFIX, "Subordinate worker aborted")
+									break		RetryLoop
+								} else {
+									logDebug(FFMPEG_PREFIX, "Websocket client aborted the job reseting stdout, stderr history")
+									continue	RetryLoop
+								}
+							case FFMPEG_WS_SERVER_FAILED:
+								logDebug(FFMPEG_PREFIX, "Websocket server failed to process the task!")
+								close(logLineCh)
+								break		RetryLoop
+							}
+	
+							logLines = append(logLines, logLine)
+	
+						}
+					}
+					
+					// Finished task send via unix
+					for _, logLine := range logLines {
+						fmt.Fprint(conn, logLine)
+					}
+					break RetryLoop
+
 				}
+
 			}(c)
 		}
 
@@ -209,7 +277,6 @@ func makeFFmpegHandler() http.HandlerFunc {
         // Read messages in a loop from the browser
         for {
 
-			// TODO error handling for the browser side
 			err = pingPongFFmpegMessageOfType(wsConn, "ready", nil)
 			if err != nil {
 				logHTTPRequest(r, 599, FFMPEG_PREFIX, "websocket failed to get ready", err)
@@ -220,78 +287,94 @@ func makeFFmpegHandler() http.HandlerFunc {
 
 			// Wait for a job
 			pipeTask := <-ch
-			ffargsJson := pipeTask.FFargsJson
+			pipeTask.WsConn.Store(wsConn) // store conn for abort handling
 
 			err = pingPongFFmpegMessageOfType(wsConn, "taskReady", nil)
 			if err != nil {
 				// Hand out fftask to another
-				logHTTPRequest(r, 599, FFMPEG_PREFIX, "websocket failed handing task out to another", err)
+				logHTTPRequest(r, 399, FFMPEG_PREFIX, "websocket failed handing task out to another", err)
 				ch <-pipeTask
 
 				// Close websocket
 				return
 			}
 
-			func () {
-					
-				defer func() {
-					// TODO error handling
-					// Send close to close unix socket
-					close(pipeTask.LogLineCh)
-				}()
+			// CONTINUE FOR ON ERROR FROM THIS POINT
 
-				logHTTPRequest(r, -1, FFMPEG_PREFIX, "received ffargs json", ffargsJson)
+			logHTTPRequest(r, -1, FFMPEG_PREFIX, "received ffargs json", pipeTask.FFargsJson)
 
-				// Parse json for processing on this end
-				var ffargs FFmpegArgs
-				if err = json.Unmarshal([]byte(ffargsJson), &ffargs); err != nil {
-					logHTTPRequest(r, 599, FFMPEG_PREFIX, "FFmpeg args json error:", err)
-					return
-				}
+			var wsErr *websocket.CloseError
+			var opErr *net.OpError
+			err = processFFmpegTask(wsConn, pipeTask)
+			if errors.As(err, &wsErr) || // Consider network errors as recoverable errors
+				errors.As(err, &opErr) ||
+				errors.Is(err, net.ErrClosed) {
+				pipeTask.LogLineCh <-FFMPEG_WS_SOCKET_CLOSED
+				logHTTPRequest(r, 599, FFMPEG_PREFIX, "Websocket closed:", err)
+				continue
+			} else if err != nil {
+				pipeTask.LogLineCh <-FFMPEG_WS_SERVER_FAILED
+				logHTTPRequest(r, 599, FFMPEG_PREFIX, "Processing pipe task failed:", err)
+				continue
+			}
 
-				// Send ffargs
-				err = pingPongFFmpegMessageOfType(wsConn, "ffargs", ffargs)
-				if err != nil {
-					logHTTPRequest(r, 599, FFMPEG_PREFIX, "Failed to ping pong ffargs:", err)
-					return
-				}
-				
-				// Write inputs to the wasm end
-				if err = processFFmpegInputs(wsConn, ffargs); err != nil {
-					logHTTPRequest(r, 599, FFMPEG_PREFIX, "Failed to write input files to websocket:", err)
-					return
-				}
-
-				for {
-					typ, logLineObj, err := parseFFmpegTextMessage(wsConn.ReadMessage())
-					if err != nil {
-						logHTTPRequest(r, 599, FFMPEG_PREFIX, "Reading logline, Websocket read error:", err)
-						return
-					}
-					if typ == "logLine" {
-						pipeTask.LogLineCh <-fmt.Sprintf("%s:%s",
-							logLineObj["logType"].(string),
-							logLineObj["logLine"].(string))
-					} else if typ == "logEnd" {
-						// logLine is now over
-						break
-					} else {
-						logHTTPRequest(r, 599, FFMPEG_PREFIX, "Reading logLine, unexpected message", logLineObj)
-						return
-					}
-				}
-
-				if err = processFFmpegOutputs(wsConn, ffargs); err != nil {
-					logHTTPRequest(r, 599, FFMPEG_PREFIX, "Failed to process output files:", err)
-					return
-				}
-				// x99 is to just color the log
-				logHTTPRequest(r, 299, FFMPEG_PREFIX, "Successful ffmpeg task")
-
-			}()
+			close(pipeTask.LogLineCh)
+			// x99 is to just color the log
+			logHTTPRequest(r, 299, FFMPEG_PREFIX, "Successful ffmpeg task")
 
         }
     }
+}
+
+
+func processFFmpegTask(wsConn *websocket.Conn, pipeTask *FFmpegPipeTask) error {
+
+	// Parse json for processing on this end
+	var ffargs FFmpegArgs
+	if err := json.Unmarshal([]byte(pipeTask.FFargsJson), &ffargs); err != nil {
+		return fmt.Errorf("FFmpeg args json error: %w", err)
+	}
+
+	// Send ffargs
+	err := pingPongFFmpegMessageOfType(wsConn, "ffargs", ffargs)
+	if err != nil {
+		return fmt.Errorf("Failed to ping pong ffargs: %w", err)
+	}
+	
+	// Write inputs to the wasm end
+	if err = processFFmpegInputs(wsConn, ffargs); err != nil {
+		return fmt.Errorf( "Failed to write input files to websocket: %w", err)
+	}
+
+	for {
+		typ, logLineObj, err := parseFFmpegTextMessage(wsConn.ReadMessage())
+		if err != nil {
+			return fmt.Errorf("Reading logline, Websocket read error: %w", err)
+		}
+		if typ == "logLine" {
+
+			logLine := logLineObj["logLine"].(string)
+			packet := fmt.Sprintf("%s %d\n%s",
+				logLineObj["logType"].(string),
+				len(logLine),
+				logLine,
+			)
+			pipeTask.LogLineCh <-packet
+
+		} else if typ == "logEnd" {
+			// logLine is now over
+			break
+		} else {
+			return fmt.Errorf("Reading logLine, unexpected message: %v", logLineObj)
+		}
+	}
+
+	if err = processFFmpegOutputs(wsConn, ffargs); err != nil {
+		return fmt.Errorf("Failed to process output files: %w", err)
+	}
+	
+	return nil
+
 }
 
 func pingPongFFmpegMessageOfType(wsConn *websocket.Conn, typ string, val interface{}) error {
@@ -318,7 +401,7 @@ func writeFFmpegMessageOfType(wsConn *websocket.Conn, typ string, val interface{
 	}
 	msg, err := json.Marshal(data)
 	if err != nil {
-		return fmt.Errorf("Json marshal error %w: %v", err, data)
+		return fmt.Errorf("Json marshal error %w: %w", err, data)
 	}
 	err = wsConn.WriteMessage(websocket.TextMessage, msg)
 	if err != nil {
@@ -523,19 +606,20 @@ func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 // Subordinate worker: Sends commands to the main worker
 func subFFmpeg(args []string) {
 
+	prefix := "[POCKETSERVER.FFMPEG]"
 	socketPath := filepath.Join(os.TempDir(), "pocketserver.ffmpeg.sock")
 
 	// Connect to the UNIX socket
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
-		logFatal(FFMPEG_PREFIX, "Dial error:", err)
+		logFatal(prefix, "Dial error:", err)
 	}
 	defer conn.Close()
 
 	// Parse arguments
 	ffargs, err := parseFFmpegArgs(args)
 	if err != nil {
-		logFatal(FFMPEG_PREFIX, "Parse argument error:", err)
+		logFatal(prefix, "Parse argument error:", err)
 	}
 
 	// If run as ffprobe and there is only output it means it is input
@@ -548,25 +632,41 @@ func subFFmpeg(args []string) {
 	// Send arguments to the main worker
 	ffargsJson, err := json.Marshal(ffargs)
 	if err != nil {
-		logFatal(FFMPEG_PREFIX, "Failed to marshal json", err)
+		logFatal(prefix, "Failed to marshal json", err)
 	}
-	fmt.Fprintln(conn, string(ffargsJson))
+	fmt.Fprint(conn, fmt.Sprintf("%s %d\n%s", "ffargsJson", len(ffargsJson), ffargsJson))
 	//logInfo(FFMPEG_PREFIX, "SPAWNED pocketserver_ish SUBORDINATE WORKER FOR PROCESSING", string(ffargsJson))
 
 	// Read response from the main worker
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		response := scanner.Text()
-		typ, msg := response[:6], response[7:] // Remove 6th colon e.g., stderr:
-
-		if typ == "stdout" {
-			fmt.Fprintln(os.Stdout, msg)
-		} else {
-			fmt.Fprintln(os.Stderr, msg)
+	reader := bufio.NewReader(conn)
+	for {
+        streamType, msgLen, err := readSimplePayloadHeader(reader)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			logFatal(prefix, "failed to read header", err)
 		}
-	}
 
-	if err := scanner.Err(); err != nil {
-		logFatal(FFMPEG_PREFIX, "Scanner error:", err)
-	}
+        // 3) read exactly msgLen bytes
+        payload := make([]byte, msgLen)
+        _, err = io.ReadFull(reader, payload)
+        if err != nil {
+            logFatal(prefix, "failed to read payload:", err)
+        }
+
+        // 4) Output to stdout or stderr
+        switch streamType {
+        case "stdout":
+			fmt.Fprintln(os.Stdout, string(payload))
+        case "stderr":
+			fmt.Fprintln(os.Stderr, string(payload))
+        default:
+            // Unknown stream type, decide what to do
+            logFatal(prefix, "Unknown stream type", streamType)
+            // we still have the data in 'payload' if needed
+        }
+    }
+
+
 }

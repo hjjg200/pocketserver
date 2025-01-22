@@ -88,7 +88,7 @@ func logTimestamp(logLine string, items ...interface{}) {
 	for i, item := range items {
 		strItems[i] = fmt.Sprint(item)
 	}
-	fmt.Println(timestamp, logLine, strings.Join(strItems, " "))
+	fmt.Fprintln(os.Stderr, timestamp, logLine, strings.Join(strItems, " "))
 }
 
 func logInfo(items ...interface{}) {
@@ -632,32 +632,60 @@ func staticHandler(w http.ResponseWriter, r *http.Request) {
 		p = "static/index.html"
 	}
 
+	// Cache setter
+	setCacheHeader := func() {
+		// Cache max-age for selected static files
+		if strings.HasPrefix(p, "static/ffmpeg/") {
+			w.Header().Set("Cache-Control", "public, max-age=604800")
+		} else {
+			w.Header().Set("Cache-Control", "public, no-cache")
+		}
+	}
+
+	// If gzipped static
+	staticPath := p
+	_, gzipped := gEmbedStaticEtags[p+".gz"]
+	if gzipped {
+		staticPath += ".gz"
+	}
+
 	// Get ETag
-	etag, ok := gEmbedStaticEtags[p]
+	etag, ok := gEmbedStaticEtags[staticPath]
 	if !ok {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
+    w.Header().Set("ETag", etag)
 	
 	// Check If-None-Match header
 	if r.Header.Get("If-None-Match") == etag {
+		setCacheHeader()
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 
-	//
-	var data []byte
-
+	// Write appropriate data
 	ext := filepath.Ext(p)
-	data, _ = gEmbedStatic.ReadFile(p)
-	if ext == ".svg" {
-		str := string(data)
-		str  = processSvg(str, r.URL.Query())
-		data = []byte(str)
+
+	var data []byte
+	if gzipped {
+
+		w.Header().Set("Content-Encoding", "gzip")
+		data, _ = gEmbedStatic.ReadFile(staticPath)
+
+	} else {
+
+		data, _ = gEmbedStatic.ReadFile(p)
+
+		if ext == ".svg" {
+			str := string(data)
+			str  = processSvg(str, r.URL.Query())
+			data = []byte(str)
+		}
+
 	}
-	
-    w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "public, no-cache")
+
+	setCacheHeader()
 	http.ServeContent(w, r, filepath.Base(p), time.Time{}, bytes.NewReader(data))
 
 }
@@ -677,14 +705,28 @@ func populateEmbedEtags() {
 			return nil
 		}
 
-		// Read file content
-		data, err := gEmbedStatic.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("error reading file %s: %w", path, err)
+		// Gzip or general
+		var etag string
+		if strings.HasSuffix(path, ".gz") {
+
+			sha1, err := gEmbedStatic.ReadFile(path[:len(path)-3] + ".sha1")
+			if err != nil {
+				return fmt.Errorf("cannot find sha1 sum for gzipped file: %w", err)
+			}
+			etag = fmt.Sprintf("\"%s\"", sha1)
+
+		} else {
+
+			// Read file content
+			data, err := gEmbedStatic.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("error reading file %s: %w", path, err)
+			}
+			// Compute and store ETag
+			etag = fmt.Sprintf("\"%x\"", getCRC32OfBytes(data))
+
 		}
 
-		// Compute and store ETag
-		etag := fmt.Sprintf("\"%x\"", getCRC32OfBytes(data))
 		gEmbedStaticEtags[path] = etag
 		return nil
 	})
@@ -694,29 +736,3 @@ func populateEmbedEtags() {
 	}
 }
 
-
-func populateEmbedEtags2() {
-
-	gEmbedStaticEtags = make(map[string]string)
-
-	entries, err := gEmbedStatic.ReadDir("static")
-    if err != nil {
-        logFatal(fmt.Errorf("failed to read embedded directory: %w", err))
-    }
-
-    for _, entry := range entries {
-        if !entry.IsDir() {
-            // Read file content
-            path := "static/" + entry.Name()
-            data, err := gEmbedStatic.ReadFile(path)
-            if err != nil {
-                logFatal(fmt.Errorf("Error reading file %s: %w", path, err))
-            }
-
-            // Store the ETag (as a string) in the map
-			etag := fmt.Sprintf("\"%x\"", getCRC32OfBytes(data))
-            gEmbedStaticEtags[path] = etag
-        }
-    }
-
-}

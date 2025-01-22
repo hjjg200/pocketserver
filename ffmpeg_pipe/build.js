@@ -29,10 +29,16 @@ esbuild.build({
     platform: 'browser',
 }).then(() => {
     console.log('Build successful!');
-
+    /*
     // Copy @ffmpeg/core/dist/esm/* to static/ffmpeg/*
     copyFiles(
         path.resolve('node_modules/@ffmpeg/core/dist/esm'),
+        path.resolve('dist/static/ffmpeg')
+    );*/
+
+    // Copy @ffmpeg/core-mt/dist/esm/* to static/ffmpeg/*
+    copyFiles(
+        path.resolve('node_modules/@ffmpeg/core-mt/dist/esm'),
         path.resolve('dist/static/ffmpeg')
     );
 

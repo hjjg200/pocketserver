@@ -39,7 +39,8 @@ async function pongBackMessageOfType(socket, typ) {
  *      - otherwise => parse JSON => flow(ffargs)
  *   3) repeat
  */
-async function cycleJobs(socket) {
+async function cycleJobs(socket, signal) {
+
   try {
     while (true) {
 
@@ -51,19 +52,33 @@ async function cycleJobs(socket) {
 
       // parse the ffargs object
       const ffargs = await pongBackMessageOfType(socket, "ffargs");
+
+      const terminator = () => {
+        if (ffmpeg) {
+          ffmpeg.terminate();
+          ffmpeg = null;
+        }
+      };
       try {
+
+        ffmpegLogShow();
         ffmpeg = new FFmpeg();
         await ffmpeg.load({
-          corePath: "/static/ffmpeg/ffmpeg-core.js",
+          coreURL: "/static/ffmpeg/ffmpeg-core.js",
+          wasmURL: "/static/ffmpeg/ffmpeg-core.wasm",
+          workerURL: "/static/ffmpeg/ffmpeg-core.worker.js",
           classWorkerURL: "/static/ffmpeg/worker.js"
         });
-        ffmpegLogShow();
+        signal.addEventListener("abort", terminator);
+
         await flow(ffargs, socket);
+
       } catch (err) {
-        ffmpegLog("error", "flow error:", err);
-        return;
+        socket.close();
+        throw new Error(`flow error: ${err}`);
       } finally {
-        ffmpeg.terminate();
+        signal.removeEventListener("abort", terminator);
+        terminator();
       }
 
       ffmpegLog("info", "Job done. Going for next job...");
@@ -84,6 +99,8 @@ async function cycleJobs(socket) {
 async function flow(ffargs, socket) {
 
   jobCounter++;
+  ffmpegLog("info", `Job ${jobCounter}`);
+  console.log(`Job ${jobCounter}`)
 
   // ephemeral log listener
   const onLog = (entry) => {
@@ -243,34 +260,34 @@ async function mainLoop() {
     const wsProtocol = (location.protocol === "https:") ? "wss://" : "ws://";
     const socketURL = wsProtocol + location.host + "/ws/ffmpeg";
     const socket = new WebSocket(socketURL);
-
-    let promise0, resolver0;
-    let promise1;
-    promise0 = new Promise(resolve => resolver0 = resolve);
-    socket.addEventListener("open", async () => {
-      ffmpegLog("info", "WebSocket for ffmpeg open");
-      promise1 = cycleJobs(socket);
-      resolver0();
-    });
-
-    let closed = false;
+    const controller = new AbortController();
+    const { signal } = controller;
 
     let messageQueue = [];
     let pairQueue = [];
+    let promise0, resolver0;
+    let promise1;
 
-    function close() {
-      closed = true;
-      while (pairQueue.length) {
-        const { reject } = pairQueue.shift();
-        reject(new Error("Socket closed"));
-      }
+    promise0 = new Promise(resolve => resolver0 = resolve);
+    socket.addEventListener("open", async () => {
+      ffmpegLog("info", "WebSocket for ffmpeg open");
+
+      promise1 = cycleJobs(socket, signal);
+      signal.addEventListener("abort", () => {
+        socket.close();
+        while (pairQueue.length) {
+          const { reject } = pairQueue.shift();
+          reject(new Error("Socket closed"));
+        }
+        messageQueue = null;
+        pairQueue = null;
+        resolver0();
+      });
+
       resolver0();
-    }
+    });
 
     socket.shift = async () => {
-      if (closed) {
-        throw new Error("Socket closed");
-      }
       if (messageQueue.length > 0) return messageQueue.shift();
       return new Promise((resolve, reject) => {
         pairQueue.push({ resolve, reject });
@@ -287,14 +304,11 @@ async function mainLoop() {
     });
     socket.addEventListener("close", (ev) => {
       ffmpegLog("error", "WebSocket closed:", ev);
-      close();
-
-      messageQueue = [];
-      pairQueue = [];
+      controller.abort();
     });
     socket.addEventListener("error", (err) => {
       ffmpegLog("error", "WebSocket error:", err);
-      socket.close();
+      controller.abort();
     });
 
     await promise0;

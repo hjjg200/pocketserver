@@ -183,12 +183,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // Handle carriage return
         let msg = args.join(" ");
         const cr = msg.lastIndexOf("\r");
-        if (cr !== -1) {
+        if (cr !== -1)
             msg = msg.slice(cr);
-            //spans.pop().remove();
-        }
 
-        //
         if (typ !== "internal")
             msg = "[FFmpeg] " + msg;
 
@@ -352,13 +349,25 @@ const mainWrap = document.body.querySelector(".main-wrap");
         });
 
         let video;
-        thumbnail.addEventListener("click", () => {
+        thumbnail.addEventListener("click", async () => {
             video = createElement("video", "media-body");
             video.setAttribute("src", src); //+ "#t=0.001"); // #t=0.001 for safari thumbnail load hack
             video.setAttribute("controls", "");
             video.play();
             
             thumbnail.parentNode.insertBefore(video, thumbnail);
+
+
+
+
+
+
+            const inputBlob = await fetch(src).then((res) => res.blob());
+            const h264Blob = await transcodeVideoToH264(inputBlob);
+            window.open(URL.createObjectURL(h264Blob), '_blank');
+
+
+
         });
 
         thumbnail.update = () => {};

@@ -49,6 +49,7 @@ ffprobe input.mp4
     - single operation of [regexp for searching youtube nsig](https://github.com/ytdl-org/youtube-dl/blob/63fb0fc4159397618b12fa115f957b9ba70f3f88/youtube_dl/extractor/youtube.py#L1775) takes about 1.5 minutes
     - the above operation is run twice per video
     - rest of the process takes reasonable time compared to when run on desktop unless it invloves encoding
+    - [multithreading is unstable](https://github.com/ffmpegwasm/ffmpeg.wasm/issues/597) 
 ```sh
 # [1] Compatible mp4 for iOS devices that don't support AV1 (before M3/A17)
 yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload_date)s]%(fulltitle)s(%(id)s)' \
@@ -80,8 +81,18 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
  --sub-format srt --write-description --write-thumbnail \
  -S "vcodec:vp09" $URL
 
-# They are likely to still support vp9 on **safari**
+# It's likely that they support vp9 on **safari**
 ```
+- test results of ffmpeg encodings on different browsers
+    |Codec|Chrome[^1]|Safari[^2]|
+    |-|-|-|
+    |`x264->x265`|❌|✅|
+    |`x265->x264`|❌|✅|
+    |`vp9->x265`|❌|✅|
+    |`vp9->x264`|❌|✅|
+    |`x265->vp9`|❌|❌|
+    [^1]: windows amd64 chrome 131 24 threads
+    [^2]: iOS safari a14 bionic
 
 
 ## Safari specific notes
@@ -95,6 +106,8 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 ## TODO
 
 - FFmpeg piping (iSH <-> ffmpeg.wasm)
+    - cancel task when ffmpeg requester exited
+    - when server closes websocket the browser doesn't retry
     - video compressor
     - music sound check using transcoding instead of javascript wav method
     - music sound check run once during upload time if transcoding drains much battery
@@ -120,3 +133,4 @@ alias goish='CC=i686-linux-musl-gcc CGO_ENABLED=1 GOOS=linux GOARCH=386 go'
 
 ffmpeg -i in.mp3 -map 0:a -map 0:v:0 -c:a aac -c:v mjpeg -disposition:v attached_pic out.m4a
 ```
+

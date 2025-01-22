@@ -12,6 +12,9 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"encoding/json"
+	"bufio"
+	"io"
+	"strconv"
 	"fmt"
 	"math/big"
 	"net"
@@ -79,7 +82,7 @@ func changeToExecDir() error {
 	// Get the absolute path of the executable
 	execPath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to get executable path: %v", err)
+		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 
 	// Get the directory of the executable
@@ -87,7 +90,7 @@ func changeToExecDir() error {
 
 	// Change the working directory to the executable's directory
 	if err := os.Chdir(execDir); err != nil {
-		return fmt.Errorf("failed to change directory to %s: %v", execDir, err)
+		return fmt.Errorf("failed to change directory to %s: %w", execDir, err)
 	}
 
 	return nil
@@ -103,13 +106,13 @@ func generateSelfSignedCert(root *rootCACertificate, certPath, keyPath string, a
 	// Generate private key
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return fmt.Errorf("failed to generate private key: %v", err)
+		return fmt.Errorf("failed to generate private key: %w", err)
 	}
 
 	// Serial
 	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if err != nil {
-		return fmt.Errorf("failed to generate serial number: %v", err)
+		return fmt.Errorf("failed to generate serial number: %w", err)
 	}
 	
 	// Generate a self-signed certificate
@@ -135,7 +138,7 @@ func generateSelfSignedCert(root *rootCACertificate, certPath, keyPath string, a
 
 		certDER, err = x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
 		if err != nil {
-			return fmt.Errorf("failed to create certificate: %v", err)
+			return fmt.Errorf("failed to create certificate: %w", err)
 		}
 
 	} else {
@@ -169,7 +172,7 @@ func generateSelfSignedCert(root *rootCACertificate, certPath, keyPath string, a
 
 		certDER, err = x509.CreateCertificate(rand.Reader, template, root.cert, &privateKey.PublicKey, root.key)
 		if err != nil {
-			return fmt.Errorf("failed to create certificate: %v", err)
+			return fmt.Errorf("failed to create certificate: %w", err)
 		}
 		
 	}
@@ -180,27 +183,27 @@ func generateSelfSignedCert(root *rootCACertificate, certPath, keyPath string, a
 	// Encode the private key as PEM
 	keyBytes, err := x509.MarshalECPrivateKey(privateKey)
 	if err != nil {
-		return fmt.Errorf("failed to marshal private key: %v", err)
+		return fmt.Errorf("failed to marshal private key: %w", err)
 	}
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
 
 	// Write key.pem to the current directory
 	err = os.WriteFile(keyPath, keyPEM, 0600) // Use 0600 permissions for security
 	if err != nil {
-		return fmt.Errorf("Error writing key pem: %v", err)
+		return fmt.Errorf("Error writing key pem: %w", err)
 	}
 
 	// Write cert.pem to the current directory
 	err = os.WriteFile(certPath, certPEM, 0644) // Readable by others if needed
 	if err != nil {
-		return fmt.Errorf("Error writing cert pem: %v", err)
+		return fmt.Errorf("Error writing cert pem: %w", err)
 	}
 
 	// Write crt file for convenience
 	if root == nil {
 		err = os.WriteFile(certPath + ".crt", certPEM, 0644)
 		if err != nil {
-			return fmt.Errorf("Error writing cert pem.crt: %v", err)
+			return fmt.Errorf("Error writing cert pem.crt: %w", err)
 		}
 	}
 
@@ -235,7 +238,7 @@ func _loadRootCA(certPath, keyPath string) (*rootCACertificate, error) {
 	// Load certificate
 	certPEM, err := os.ReadFile(certPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read root certificate: %v", err)
+		return nil, fmt.Errorf("failed to read root certificate: %w", err)
 	}
 	block, _ := pem.Decode(certPEM)
 	if block == nil || block.Type != "CERTIFICATE" {
@@ -243,13 +246,13 @@ func _loadRootCA(certPath, keyPath string) (*rootCACertificate, error) {
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse root certificate: %v", err)
+		return nil, fmt.Errorf("failed to parse root certificate: %w", err)
 	}
 
 	// Load private key
 	keyPEM, err := os.ReadFile(keyPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read root key: %v", err)
+		return nil, fmt.Errorf("failed to read root key: %w", err)
 	}
 	keyBlock, _ := pem.Decode(keyPEM)
 	if keyBlock == nil || keyBlock.Type != "EC PRIVATE KEY" {
@@ -257,7 +260,7 @@ func _loadRootCA(certPath, keyPath string) (*rootCACertificate, error) {
 	}
 	privateKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse root private key: %v", err)
+		return nil, fmt.Errorf("failed to parse root private key: %w", err)
 	}
 
 	return &rootCACertificate{cert, privateKey}, nil
@@ -284,7 +287,7 @@ func _ensureTLSCertificate(certPath, keyPath string, addrs []string) error {
 			logInfo("Certificate not found. Generating a new one.")
 			return generateSelfSignedCert(root, certPath, keyPath, addrs)
 		}
-		return fmt.Errorf("failed to read cert file: %v", err)
+		return fmt.Errorf("failed to read cert file: %w", err)
 	}
 
 	// Decode the PEM to parse the certificate
@@ -294,7 +297,7 @@ func _ensureTLSCertificate(certPath, keyPath string, addrs []string) error {
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return fmt.Errorf("failed to parse certificate: %v", err)
+		return fmt.Errorf("failed to parse certificate: %w", err)
 	}
 
 	if err = validateCertificate(cert, addrs); err != nil {
@@ -419,6 +422,38 @@ func debounce(fn func(), delay time.Duration) func() {
 
 }
 
+func readSimplePayloadHeader(reader *bufio.Reader) (string, int, error) {
+	// 1) Read a header line
+	header, err := reader.ReadString('\n')
+	if err != nil {
+		return "", 0, err
+	}
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return "", 0, io.EOF
+	}
+
+	// 2) Parse the prefix (e.g. "stdout") and length (e.g. "512")
+	parts := strings.SplitN(header, " ", 2)
+	if len(parts) != 2 {
+		// protocol error
+		return "", 0, fmt.Errorf("Malformed header: %s", header)
+	}
+	streamType := parts[0] // "stdout" or "stderr"
+	lengthStr := parts[1]
+
+	msgLen, err := strconv.Atoi(lengthStr)
+	if err != nil {
+		// protocol error
+		return "", 0, fmt.Errorf("Invalid length %d in header %s", lengthStr, header)
+	}
+	if msgLen < 0 {
+		return "", 0, fmt.Errorf("Negative length: %d", msgLen)
+	}
+	return streamType, msgLen, nil
+
+}
+
 // isIPv4 checks if an IP address is IPv4
 func isIPv4(address string) bool {
 	ip := net.ParseIP(address)
@@ -445,7 +480,6 @@ func resolveLocalIPs() ([]string) {
 		udpAddr := &net.UDPAddr{IP: ip, Port: 9}
 		conn, err := net.DialUDP("udp", nil, udpAddr)
 		if err != nil {
-			//fmt.Printf("Error connecting to %s: %v\n", ip, err)
 			continue
 		}
 		defer conn.Close()
@@ -596,7 +630,7 @@ func generateRandomString(length int) (string, error) {
 	bytes := make([]byte, length/2)
 	_, err := rand.Read(bytes)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate random bytes: %v", err)
+		return "", fmt.Errorf("failed to generate random bytes: %w", err)
 	}
 	return hex.EncodeToString(bytes), nil
 }

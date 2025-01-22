@@ -351,6 +351,36 @@ function base64ToUtf8(base64) {
     );
 }
 
+(() => {
+
+    let wakeLock = null;
+
+    window.requestWakeLock = async function() {
+        try {
+            // Request a screen wake lock
+            wakeLock = await navigator.wakeLock.request('screen');
+            console.log('Wake lock is active.');
+
+            // Handle the wake lock being released (e.g., when the tab becomes inactive)
+            wakeLock.addEventListener('release', () => {
+                console.log('Wake lock released.');
+            });
+        } catch (err) {
+            console.error(`Failed to request wake lock: ${err.name}, ${err.message}`);
+        }
+    }
+
+    window.releaseWakeLock = function() {
+        if (wakeLock) {
+            wakeLock.release()
+            .then(() => {
+                console.log('Wake lock released manually.');
+                wakeLock = null;
+            });
+        }
+    }
+
+})();
 
 (() => { // OBSERVER
 

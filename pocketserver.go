@@ -56,6 +56,8 @@ const FFMPEG_CMD_BASE = "ffmpeg -y -i '%s' "
 const FFMPEG_CMD_AUDIO_THUMB = "-an -c:v copy '%s'"
 const FFMPEG_CMD_AUDIO_THUMB_SMALL = "-vf 'scale=iw*sqrt(16384/(iw*ih)):-1' -an -c:v libwebp -q:v 80 '%s'"
 const FFMPEG_CMD_VIDEO_THUMB = "-ss 00:00:01 -vframes 1 '%s'"
+const FFMPEG_WS_SOCKET_CLOSED = "POCKETSERVER_FFMPEG_WEBSOCKET_CLOSED"
+const FFMPEG_WS_SERVER_FAILED = "POCKETSERVER_FFMPEG_WEBSOCKET_SERVER_FAILED"
 
 const LOG_RED		= "\033[31m"
 const LOG_GREEN		= "\033[32m"
@@ -404,6 +406,14 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 
+func topLevelMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add required headers for cross-origin isolation
+		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		next.ServeHTTP(w, r)
+	})
+}
 
 
 
@@ -675,10 +685,12 @@ func main() {
 
 	// HTTPS :443 mux
 	httpsMux := authMiddleware(mux)
+	httpsMux  = topLevelMiddleware(httpsMux)
 	httpsMux  = performanceMiddleware(httpsMux)
 
 	// http :80 mux
 	httpMux := httpFilterMiddleware(mux)
+	httpMux  = topLevelMiddleware(httpMux)
 	httpMux  = performanceMiddleware(httpMux)
 
 	// Auth
