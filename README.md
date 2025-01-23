@@ -85,14 +85,15 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 
 # It's likely that they support vp9 on **safari**
 ```
-- test results of ffmpeg encodings on different browsers
+- test results of ffmpeg encodings on different browsers (left is single-threaded ffmpeg and right is @ffmpeg/core-mt)
     |Codec|Chrome[^1]|Safari[^2]|Firefox[^3]|
     |-|-|-|-|
-    |`x264->x265`|❌|✅|✅|
-    |`x265->x264`|❌|✅|✅|
-    |`vp9->x265`|❌|✅|✅|
-    |`vp9->x264`|❌|✅|✅|
-    |`x265->vp9`|❌|❌|❌|
+    |`aac->aac`|✅❌|◻️◻️|◻️◻️|
+    |`x264->x265`|◻️❌|◻️✅|◻️✅|
+    |`x265->x264`|◻️❌|◻️✅|◻️✅|
+    |`vp9->x265`|◻️❌|◻️✅|◻️✅|
+    |`vp9->x264`|◻️❌|◻️✅|◻️✅|
+    |`x265->vp9`|◻️❌|◻️❌|◻️❌|
     [^1]: windows amd64 chrome 131 24 threads
     [^2]: iOS safari a14 bionic
     [^3]: windows amd64 firefox 134 24 threads
@@ -111,10 +112,8 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 - FFmpeg piping (iSH <-> ffmpeg.wasm)
     - memory leak check
     - video compressor
-    - music sound check using transcoding instead of javascript wav method
-    - music sound check run once during upload time if transcoding drains much battery
+    - music sound check run once during upload time, instead of javascript wav method
     - metadata extraction during upload time
-    - handle browser drop out, handle ffmpeg cancel
     - ...
 - Reload images src when non-cache fetch finished
 - log functions fix argument handling
