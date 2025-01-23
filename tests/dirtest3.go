@@ -4,27 +4,28 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/signal"
 	"strconv"
-	"strings"
 	"time"
+	"log"
+	"io"
+	"syscall"
+	"strings"
 )
 
-// ReadDirectory reads a directory using ReadDir with a chunk size and repeats the process repeatCount times.
-func ReadDirectory(root string, chunkSize, repeatCount int, sleepDuration time.Duration) {
-	if repeatCount <= 0 {
-		fmt.Println("Repeat count must be greater than 0")
-		return
-	}
+const name = "dirtest3"
 
-	fmt.Println("ReadDir stress test")
-	fmt.Printf("chunkSize: %d, sleepDuration: %v\n", chunkSize, sleepDuration)
-	fmt.Println()
+// ReadDirectory reads a directory using ReadDir with a chunk size and repeats the process repeatCount times.
+func ReadDirectory(root string, chunkSize int, sleepDuration time.Duration) {
+
+	log.Println("ReadDir stress test")
+	log.Println(root)
+	log.Printf("chunkSize: %d, sleepDuration: %v\n", chunkSize, sleepDuration)
+	log.Println()
 
 	allStart := time.Now()
 
-	for cycle := 1; cycle <= repeatCount; cycle++ {
-		cycleStr := fmt.Sprintf("Cycle %d:", cycle)
-		cycleStr = cycleStr + strings.Repeat(" ", 20 - len(cycleStr))
+	for cycle := 1; cycle <= 100; cycle++ {
 
 		currentIndex := 0
 		start := time.Now()
@@ -34,21 +35,19 @@ func ReadDirectory(root string, chunkSize, repeatCount int, sleepDuration time.D
 		readDir = func(path string) {
 			file, err := os.Open(path)
 			if err != nil {
-				fmt.Printf("Error opening directory: %v\n", err)
-				return
+				log.Fatalf("Error opening directory: %v\n", err)
 			}
 			defer file.Close()
 
 			for {
 				entries, err := file.ReadDir(chunkSize)
 				if err != nil && err != fs.ErrClosed {
-					fmt.Printf("Error reading directory: %v\n", err)
-					return
+					log.Fatalf("Error reading directory: %v\n", err)
 				}
 
 				for _, entry := range entries {
 					currentIndex++
-					fmt.Printf("\r%s%d...", cycleStr, currentIndex)
+					fmt.Printf("\r" + strings.Repeat(".", int( (time.Now().UnixMilli()/500)%3+1 )) + "    \r")
 
 					// Discard the name (as per instructions)
 					_ = entry.Name()
@@ -72,37 +71,51 @@ func ReadDirectory(root string, chunkSize, repeatCount int, sleepDuration time.D
 
 		readDir(root)
 		elapsed := time.Since(start)
-		fmt.Printf(" (%v/%v)\n", elapsed-slept, elapsed)
+		fmt.Printf("\r")
+		log.Printf("Cycle %d: %d files (%v/%v)\n", cycle, currentIndex, elapsed-slept, elapsed)
+		time.Sleep(sleepDuration)
 	}
 
-	fmt.Println("SUCCESS", time.Since(allStart))
+	log.Println("SUCCESS", time.Since(allStart))
 }
 
 func main() {
-	if len(os.Args) < 5 {
-		fmt.Println("Usage: go run main.go <path> <chunkSize> <repeatCount> <sleepDurationMs>")
-		return
+	if len(os.Args) < 4 {
+		log.Fatalln("Usage: go run main.go <path> <chunkSize> <sleepDurationMs>")
 	}
 
 	rootDir := os.Args[1]
 	chunkSize, err := strconv.Atoi(os.Args[2])
 	if err != nil || chunkSize <= 0 {
-		fmt.Println("Invalid chunk size. Please provide a positive integer.")
-		return
+		log.Fatalln("Invalid chunk size. Please provide a positive integer.")
 	}
 
-	repeatCount, err := strconv.Atoi(os.Args[3])
-	if err != nil || repeatCount <= 0 {
-		fmt.Println("Invalid repeat count. Please provide a positive integer.")
-		return
-	}
-
-	sleepDurationMs, err := strconv.Atoi(os.Args[4])
+	sleepDurationMs, err := strconv.Atoi(os.Args[3])
 	if err != nil || sleepDurationMs < 0 {
-		fmt.Println("Invalid sleep duration. Please provide a non-negative integer.")
-		return
+		log.Fatalln("Invalid sleep duration. Please provide a non-negative integer.")
 	}
 	sleepDuration := time.Duration(sleepDurationMs) * time.Millisecond
 
-	ReadDirectory(rootDir, chunkSize, repeatCount, sleepDuration)
+
+	// Open a log file
+	logFile, err := os.OpenFile(name+".log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Fatalln("Failed to open log file: %v", err)
+	}
+	defer logFile.Close()
+	log.SetFlags(0)
+	log.SetOutput(io.MultiWriter(os.Stderr, logFile))
+
+	// Create a channel to listen for OS signals
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+
+	// Start a goroutine to handle the signal
+	go func() {
+		<-signalChan
+		log.Println("Abort")
+		os.Exit(1)
+	}()
+
+	ReadDirectory(rootDir, chunkSize, sleepDuration)
 }

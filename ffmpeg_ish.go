@@ -17,7 +17,6 @@ import (
 
 func executeFFmpeg(command string) (string, error) {
 
-	// TODO test
 	command = "nice " + command // nice -n 10~19
 
 	// Allocate a buffer for the output

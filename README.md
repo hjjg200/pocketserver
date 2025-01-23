@@ -44,7 +44,7 @@ ffprobe input.mp4
 # ffmpeg.wasm sends the resulting outputn via websocket
 # main worker writes the output file at the specified output path on iSH's end
 ```
-- `yt-dlp` using ffmpeg pipelining
+- you can use `yt-dlp` installed on iSH with ffmpeg pipelining
     - loading python and up to printing ffmpeg version takes about 1 minute
     - single operation of [regexp for searching youtube nsig](https://github.com/ytdl-org/youtube-dl/blob/63fb0fc4159397618b12fa115f957b9ba70f3f88/youtube_dl/extractor/youtube.py#L1775) takes about 1.5 minutes
     - the above operation is run twice per video
@@ -58,8 +58,9 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
  --embed-metadata --write-info-json --clean-infojson \
  --write-comments --write-subs --sub-lang all \
  --sub-format srt --write-description --write-thumbnail \
- --exec "ffmpeg -i {} -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p \
- -c:a aac -q:a 1 -movflags faststart {}.h264.mp4" \
+ --exec "ffmpeg -i {} -c:v libx265 -tag:v hvc1 -preset fast -crf 28 \
+ -c:a aac -b:a 192k -x265-params "aq-mode=3" -pix_fmt yuv420p \
+ -movflags faststart {}.h265.mp4" \
  -S "vcodec:vp09" $URL
 
 # Line 3: Merge into webm before encoding to a compatible mp4
@@ -71,6 +72,7 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 #   av01 > vp9.2 > vp9 > h265 > h264 > vp8 > h263 > theora > other
 #   Specify acodec if necessary
 #   flac/alac > wav/aiff > opus > vorbis > aac > mp4a > mp3 > ac4 > eac3 > ac3 > dts > other
+# Works on ffmpeg.wasm on iOS safari
 
 # [2] Safari WebM for iOS devices that don't support AV1 (before M3/A17)
 yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload_date)s]%(fulltitle)s(%(id)s)' \
@@ -107,14 +109,14 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 ## TODO
 
 - FFmpeg piping (iSH <-> ffmpeg.wasm)
-    - cancel task when ffmpeg requester exited
-    - when server closes websocket the browser doesn't retry
+    - memory leak check
     - video compressor
     - music sound check using transcoding instead of javascript wav method
     - music sound check run once during upload time if transcoding drains much battery
     - metadata extraction during upload time
     - handle browser drop out, handle ffmpeg cancel
     - ...
+- Reload images src when non-cache fetch finished
 - log functions fix argument handling
 - playlist loop single song
 - sub-playlist under album
@@ -127,7 +129,7 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 
 ```sh
 ffmpeg -i in.opus -c:a libmp3lame -q:a 1 -ar 44100 -map_metadata 0 -map_metadata 0:s:0 -id3v2_version 3 out.mp3
-ffmpeg -i in.opus -c:v mjpeg -c:a aac -b:a 128k -map_metadata 0 -map_metadata 0:s:0 -id3v2_version 3 -f ipod out.m4a
+ffmpeg -i in.opus -c:v mjpeg -c:a aac -q:a 1 -map_metadata 0 -map_metadata 0:s:0 -id3v2_version 3 -f ipod out.m4a
 ffmpeg -i "$INPUT" -c:v hevc_nvenc -tag:v hvc1 -preset slow -crf 28 -c:a aac -b:a 192k -x265-params "aq-mode=3" "${INPUT%.*}_2.mp4"
 yt-dlp --extract-audio --audio-format best --embed-thumbnail --add-metadata --metadata-from-title "%(title)s" -o "%(title)s.%(ext)s" $1
 alias goish='CC=i686-linux-musl-gcc CGO_ENABLED=1 GOOS=linux GOARCH=386 go'

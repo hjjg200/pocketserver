@@ -269,7 +269,7 @@ func listHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get cache
-	data, ok := gMetadataManager.Get(dir, cached)
+	data, ok := gMetadataManager.Get(dir)
 	if !ok {
 		logHTTPRequest(r, -1, "Invalid directory: ", dir)
 		http.Error(w, "Not found", http.StatusNotFound)

@@ -188,8 +188,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (typ !== "internal")
             msg = "[FFmpeg] " + msg;
-
+        
+        // Message
         span.textContent = msg;
+        if (typ === "error")
+            console.error(msg);
 
         // Remove excessive logs
         while (spans.length > maxFFmpegLogCount-1)
@@ -1118,7 +1121,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         }
 
         // Throttle the editing api call
-        const editPlaylist = throttle(5000, () => {
+        const editPlaylist = debounce(5000, () => {
                         
             const url = buildURL("/editPlaylist", {[QUERY_ALBUM]: gAlbum});
             fetch(url, {
