@@ -86,14 +86,23 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 # It's likely that they support vp9 on **safari**
 ```
 - test results of ffmpeg encodings on different browsers (left is single-threaded ffmpeg and right is @ffmpeg/core-mt)
-    |Codec|Chrome[^1]|Safari[^2]|Firefox[^3]|
-    |-|-|-|-|
-    |`aac->aac`     |✅❌|⬜⬜|⬜⬜|
-    |`x264->x265`   |⬜❌|⬜✅|⬜✅|
-    |`x265->x264`   |⬜❌|⬜✅|⬜✅|
-    |`vp9->x265`    |⬜❌|⬜✅|⬜✅|
-    |`vp9->x264`    |⬜❌|⬜✅|⬜✅|
-    |`x265->vp9`    |⬜❌|⬜❌|⬜❌|
+    |Codec|Chrome[^1]|Safari[^2]|Firefox[^3]|Usage|
+    |-|-|-|-|-|
+    |`x264->x265`   |❌❌|✅✅|✅✅||
+    |`vp9->x265`    |❌❌|❌✅|❌✅|yt-dlp|
+    |`hevc->x265`   |❌❌|❌✅|❌✅||
+    |`aac->aac`     |✅❌|✅✅|✅✅|Sound check during upload|
+    |`mp3->aac`     |✅✅|✅✅|✅✅||
+    |`aac->wav`     |✅✅|✅✅|✅✅||
+    |`mp3->wav`     |✅✅|✅✅|✅✅||
+    |`opus->wav`    |✅✅|✅✅|✅✅||
+    |`wav->aac`     |✅✅|✅✅|✅✅||
+    |`wav->mp3`     |✅✅|✅✅|✅✅||
+    |`wav->opus`    |❌❌|❌❌|❌❌|out of bounds|
+    |`webp->x265`   |❌❌|❌❌|❌❌|out of bounds|
+    |`gif->x265`    |❌❌|❌✅|❌✅||
+    |`webp->jpg`    |❌❌|❌❌|❌❌|x64 works|
+    |`png->jpg`     |❌❌|❌❌|❌❌|x64 works|
     [^1]: windows amd64 chrome 131 24 threads
     [^2]: iOS safari a14 bionic
     [^3]: windows amd64 firefox 134 24 threads
