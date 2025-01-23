@@ -18,26 +18,21 @@ import { fetchFile } from '@ffmpeg/util';
  * newFFmpeg:
  *   Creates and loads the ffmpeg.wasm instance. Adjust the URLs to your environment.
  */
-async function newFFmpeg(mt = true) {
-
-  /**
-   * mt: whether to use @ffmpeg/core-mt
-   *   mt performs unstably on windows chrome
-   */
+async function newFFmpeg() {
 
   const ffmpeg = new FFmpeg();
   await ffmpeg.load(
-    mt ? {
+    /*mt ? */{
       coreURL: "/static/ffmpeg/mt-ffmpeg-core.js",
       wasmURL: "/static/ffmpeg/mt-ffmpeg-core.wasm",
       workerURL: "/static/ffmpeg/mt-ffmpeg-core.worker.js",
       classWorkerURL: "/static/ffmpeg/worker.js",
     }
-    : {
+    /*: {
       coreURL: "/static/ffmpeg/ffmpeg-core.js",
       wasmURL: "/static/ffmpeg/ffmpeg-core.wasm",
       classWorkerURL: "/static/ffmpeg/worker.js",
-    }
+    }*/
   );
   return ffmpeg;
 }
@@ -210,6 +205,9 @@ async function copyMetadataAndCover(ffmpeg, inputFileName, correctedFileName, fi
     // Copy all metadata from input #1 (the original source)
     "-map_metadata", "1",
 
+    // Prevent chrome freeze when embedding album art
+    "-threads", "1",
+
     "-movflags", "+faststart",
     finalFileName,
   ]);
@@ -227,7 +225,7 @@ async function copyMetadataAndCover(ffmpeg, inputFileName, correctedFileName, fi
  *     7. Return final .m4a blob
  */
 window.ffmpegSoundCheck = async (src, targetLUFS = -14) => {
-  const ffmpeg = await newFFmpeg(false);
+  const ffmpeg = await newFFmpeg();
 
   // 0) Download the file into memory
   const inputFile = await fetchFile(src);
