@@ -88,23 +88,16 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 - test results of ffmpeg encodings on different browsers (left is single-threaded ffmpeg and right is @ffmpeg/core-mt)
     |Codec|Chrome[^1]|Safari[^2]|Firefox[^3]|
     |-|-|-|-|
-    |`aac->aac`|✅❌|◻️◻️|◻️◻️|
-    |`x264->x265`|◻️❌|◻️✅|◻️✅|
-    |`x265->x264`|◻️❌|◻️✅|◻️✅|
-    |`vp9->x265`|◻️❌|◻️✅|◻️✅|
-    |`vp9->x264`|◻️❌|◻️✅|◻️✅|
-    |`x265->vp9`|◻️❌|◻️❌|◻️❌|
+    |`aac->aac`     |✅❌|⬜⬜|⬜⬜|
+    |`x264->x265`   |⬜❌|⬜✅|⬜✅|
+    |`x265->x264`   |⬜❌|⬜✅|⬜✅|
+    |`vp9->x265`    |⬜❌|⬜✅|⬜✅|
+    |`vp9->x264`    |⬜❌|⬜✅|⬜✅|
+    |`x265->vp9`    |⬜❌|⬜❌|⬜❌|
     [^1]: windows amd64 chrome 131 24 threads
     [^2]: iOS safari a14 bionic
     [^3]: windows amd64 firefox 134 24 threads
 
-
-## Safari specific notes
-
-- Pausing \<audio\> is done by `audio.playbackRate = 0` otherwise, blob-url audios show unexpected behavior regarding media session API
-    - TODO Use ffmpeg to sound check music at upload time so no more need to use runtime sound check and blob url
-- On iphone safari, accessing via `http://[::1]` somehow makes decoding of audio fail. It works perfectly fine on `http://127.0.0.1`
-    - Might be related with blob url handling
 
 
 ## TODO
@@ -123,6 +116,12 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 - remove metadata of removed files
 - paste to upload for iOS safari
 
+
+### Safari specific memo
+
+- When using blob url wav as audio's src, doing `audio.pause()` causes media session API to behave unexpectedly. You can pause audio with `audio.playbackRate = 0` as a workaround.
+- On iphone safari, accessing via `http://[::1]` somehow makes decoding of audio fail. It works perfectly fine on `http://127.0.0.1`
+    - Might be related with blob url handling
 
 ### Memo
 

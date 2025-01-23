@@ -673,9 +673,6 @@ const mainWrap = document.body.querySelector(".main-wrap");
                 await changeMusic(gPlaylist[0]);
                 return;
             }
-            if (gAudio.playbackRate === 0)
-                gAudio.playbackRate = 1;
-
             await gAudio.play();
             musicPlayer.classList.add("playing");
 
@@ -685,10 +682,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
             storeAudioInfo();
         },
         pause: async () => {
-            //gAudio.pause();
-            // On iOS safari, pausing somehow revokes access to the created blob audio
-            //  resulting in no control over the media using media buttons
-            gAudio.playbackRate = 0;
+            gAudio.pause();
             musicPlayer.classList.remove("playing");
 
             navigator.mediaSession.playbackState = "paused";
@@ -902,7 +896,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
     gAudioPrevButton.addEventListener("click", mediaActionHandlers["previoustrack"]);
     gAudioNextButton.addEventListener("click", mediaActionHandlers["nexttrack"]);
     gAudioPlayPauseButton.addEventListener("click", async () => {
-        if(gAudio.playbackRate === 0) {
+        if(gAudio.paused) {
             await mediaActionHandlers["play"]();
         } else {
             mediaActionHandlers["pause"]();
