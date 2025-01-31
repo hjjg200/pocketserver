@@ -353,40 +353,64 @@ var fetchFile = async (file) => {
 };
 
 // src/main.js
-async function newFFmpeg(mt = true) {
+window.ffmpegRunCommands = async function(name, inputAry, cmds) {
+  const ffmpeg = await newFFmpeg();
+  const inputFileName = `input${guessExtension(name)}`;
+  await ffmpeg.writeFile(inputFileName, new Uint8Array(inputAry));
+  const ret = {};
+  for (let cmd of cmds) {
+    const exec = cmd.args[0] === "ffmpeg" ? ffmpeg.exec : ffmpeg.ffprobe;
+    let args = cmd.args.slice();
+    args[cmd.input] = inputFileName;
+    args[cmd.output] = "output" + cmd.outputExt;
+    await exec(args.slice(1));
+    ret[cmd.outputExt] = new Blob([await ffmpeg.readFile(args[cmd.output])], { type: cmd.outputMimeType });
+    if (cmd.outputPost) {
+      try {
+        ret[cmd.outputExt] = await cmd.outputPost(ret[cmd.outputExt]);
+      } catch {
+        return {};
+      }
+    }
+  }
+  return ret;
+};
+async function newFFmpeg() {
   const ffmpeg = new FFmpeg();
   await ffmpeg.load(
-    mt ? {
+    /*mt ? */
+    {
       coreURL: "/static/ffmpeg/mt-ffmpeg-core.js",
       wasmURL: "/static/ffmpeg/mt-ffmpeg-core.wasm",
       workerURL: "/static/ffmpeg/mt-ffmpeg-core.worker.js",
       classWorkerURL: "/static/ffmpeg/worker.js"
-    } : {
+    }
+    /*: {
       coreURL: "/static/ffmpeg/ffmpeg-core.js",
       wasmURL: "/static/ffmpeg/ffmpeg-core.wasm",
-      classWorkerURL: "/static/ffmpeg/worker.js"
-    }
+      classWorkerURL: "/static/ffmpeg/worker.js",
+    }*/
   );
   return ffmpeg;
 }
-async function getDuration(ffmpeg, inputFileName) {
+async function getTextMetadata(ffmpeg, inputFileName) {
   let stdout = "";
-  let stderr = "";
   const onLog = (evt) => {
     if (evt.type === "stdout") {
       stdout += evt.message + "\n";
-    } else if (evt.type === "stderr") {
-      stderr += evt.message + "\n";
     }
   };
   ffmpeg.on("log", onLog);
   await ffmpeg.ffprobe([
     "-i",
     inputFileName,
+    "-show_format",
     "-show_entries",
-    "format=duration",
+    "format_tags=album,artist,title,comment:format=duration",
     "-print_format",
-    "json"
+    "json",
+    "-v",
+    "quiet"
   ]);
   ffmpeg.off("log", onLog);
   let probeResult;
@@ -395,11 +419,11 @@ async function getDuration(ffmpeg, inputFileName) {
   } catch (err) {
     throw new Error("ffprobe JSON parsing failed: " + err.message);
   }
+  const tags = parseFloat(probeResult.format?.tags);
   const duration = parseFloat(probeResult.format?.duration);
   if (isNaN(duration)) {
-    throw new Error("Failed to parse duration from ffprobe output.");
   }
-  return duration;
+  return probeResult;
 }
 async function analyzeLoudnessPass1(ffmpeg, wavFileName, targetLUFS) {
   let jsonData = "";
@@ -425,6 +449,10 @@ async function analyzeLoudnessPass1(ffmpeg, wavFileName, targetLUFS) {
     `loudnorm=I=${targetLUFS}:TP=-2.0:LRA=11:print_format=json`,
     "-f",
     "null",
+    "-threads",
+    "1",
+    "-v",
+    "info",
     "-"
   ]);
   ffmpeg.off("log", onLog);
@@ -434,7 +462,7 @@ async function analyzeLoudnessPass1(ffmpeg, wavFileName, targetLUFS) {
   }
   return JSON.parse(trimmed);
 }
-async function correctLoudnessPass2(ffmpeg, wavFileName, outputFileName, analysis, durationSeconds, targetLUFS) {
+async function correctLoudnessPass2(ffmpeg, wavFileName, outputFileName, analysis, targetLUFS) {
   if (typeof analysis.input_i === "undefined" || typeof analysis.input_tp === "undefined" || typeof analysis.input_lra === "undefined" || typeof analysis.input_thresh === "undefined") {
     throw new Error("Missing necessary loudnorm parameters from pass 1 analysis.");
   }
@@ -455,14 +483,16 @@ async function correctLoudnessPass2(ffmpeg, wavFileName, outputFileName, analysi
     wavFileName,
     "-af",
     pass2Filter,
-    "-t",
-    String(durationSeconds),
     "-c:a",
     "aac",
+    "-c:v",
+    "mjpeg",
     "-b:a",
     "128k",
     "-f",
     "ipod",
+    "-threads",
+    "1",
     "-movflags",
     "+faststart",
     outputFileName
@@ -494,38 +524,28 @@ async function copyMetadataAndCover(ffmpeg, inputFileName, correctedFileName, fi
     // Copy all metadata from input #1 (the original source)
     "-map_metadata",
     "1",
+    // Prevent chrome freeze when embedding album art
+    "-threads",
+    "1",
     "-movflags",
     "+faststart",
     finalFileName
   ]);
 }
-window.ffmpegSoundCheck = async (src, targetLUFS = -14) => {
-  const ffmpeg = await newFFmpeg(false);
-  const inputFile = await fetchFile(src);
-  const inputFileName = `input${guessExtension(src)}`;
-  const wavFileName = "temp.wav";
+window.ffmpegSoundCheck = async (src2, targetLUFS = -14) => {
+  const ffmpeg = await newFFmpeg();
+  const inputFile = await fetchFile(src2);
+  const inputFileName = `input${guessExtension(src2)}`;
   const tempCorrectedFile = "tempCorrected.m4a";
   const finalOutputFile = "finalOutput.m4a";
   console.log("Writing input file to FS...");
   await ffmpeg.writeFile(inputFileName, inputFile);
-  console.log("Probing duration...");
-  const inputDuration = await getDuration(ffmpeg, inputFileName);
-  console.log("Input duration (seconds):", inputDuration.toFixed(3));
-  console.log("Converting to WAV...");
-  await ffmpeg.exec([
-    "-i",
-    inputFileName,
-    "-c:a",
-    "pcm_s16le",
-    "-ar",
-    "48000",
-    wavFileName
-  ]);
+  console.log(await getTextMetadata(ffmpeg, inputFileName));
   console.log("Analyzing loudness (pass 1)...");
-  const analysis = await analyzeLoudnessPass1(ffmpeg, wavFileName, targetLUFS);
+  const analysis = await analyzeLoudnessPass1(ffmpeg, inputFileName, targetLUFS);
   console.log("Pass 1 analysis:", analysis);
   console.log("Correcting loudness (pass 2)...");
-  await correctLoudnessPass2(ffmpeg, wavFileName, tempCorrectedFile, analysis, inputDuration, targetLUFS);
+  await correctLoudnessPass2(ffmpeg, inputFileName, tempCorrectedFile, analysis, targetLUFS);
   console.log("Merging metadata & cover art...");
   await copyMetadataAndCover(ffmpeg, inputFileName, tempCorrectedFile, finalOutputFile);
   console.log("Reading final file...");
@@ -534,6 +554,66 @@ window.ffmpegSoundCheck = async (src, targetLUFS = -14) => {
   const url = URL.createObjectURL(blob);
   console.log("Final Blob URL:", url);
   return url;
+};
+window.ffmpegGetMetadata = async (buf, contentType) => {
+  const metadata = {};
+  const [cat, sub] = contentType.split("/");
+  if (false === (cat === "audio" || cat === "video" || sub === "webp"))
+    return metadata;
+  const ffmpeg = await newFFmpeg();
+  try {
+    const inputFile = await fetchFile(new Blob([buf], { type: contentType }));
+    const inputFileName = `input${guessExtension(src)}`;
+    await ffmpeg.writeFile(inputFileName, inputFile);
+    metadata[".json"] = await getTextMetadata(ffmpeg, inputFileName);
+    if (isNaN(metadata[".json"].duration)) {
+      metadata[".json"].duration = "N/A";
+      return metadata;
+    }
+    const baseArgs = [
+      "-i",
+      inputFileName,
+      "-c:v",
+      "libwebp",
+      "-threads",
+      "1",
+      "-q:v",
+      "80",
+      "-pix_fmt",
+      "yuv420p",
+      "-an"
+    ];
+    if (cat === "video") {
+      await ffmpeg.exec([
+        ...baseArgs,
+        "-ss",
+        "00:00:01",
+        "-vframes",
+        "1",
+        "thumb.webp"
+      ]);
+      const thumb = await ffmpeg.readFile("thumb.webp");
+      metadata[".webp"] = new Blob([thumb.buffer], { type: "image/webp" });
+    } else {
+      await ffmpeg.exec([
+        ...baseArgs,
+        "thumb.webp"
+      ]);
+      await ffmpeg.exec([
+        ...baseArgs,
+        "-vf",
+        "'scale=iw*sqrt(16384/(iw*ih)):-1'",
+        "small.webp"
+      ]);
+      const thumb = await ffmpeg.readFile("thumb.webp");
+      const small = await ffmpeg.readFile("small.webp");
+      metadata[".webp"] = new Blob([thumb.buffer], { type: "image/webp" });
+      metadata["_small.webp"] = new Blob([small.buffer], { type: "image/webp" });
+    }
+  } finally {
+    ffmpeg.terminate();
+  }
+  return metadata;
 };
 var jobCounter = 0;
 async function pongBackMessageOfType(socket, typ) {

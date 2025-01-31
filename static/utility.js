@@ -301,7 +301,19 @@ function getRem() {
     return parseFloat(getComputedStyle(document.documentElement).fontSize);
 }
 
-function formatDuration(durationString) {
+function formatDuration(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+
+  if (hours > 0) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  } else {
+      return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+}
+
+function formatDurationDEP(durationString) {
     try {
         const [hours, minutes, seconds] = durationString.split(':');
         const [wholeSeconds] = seconds.split('.'); // Drop decimal part
@@ -314,7 +326,7 @@ function formatDuration(durationString) {
     }
 }
 
-function durationToSeconds(duration) {
+function durationToSecondsDEP(duration) {
     if (duration.length !== 11) return 0;
     // Split the time string into components
     const [hours, minutes, seconds] = duration.split(":");
@@ -436,7 +448,14 @@ function throttle(limit, func) {
     };
 }
 
+function toUint8Array(data) {
+  if (data instanceof ArrayBuffer)
+    data = new Uint8Array(data);
+  else if (data instanceof Uint8Array)
+    return data;
 
+  throw new Error("Only ArrayBuffer and Uint8Array are supported");
+}
 
 function setPlainCookie(name, value, days) {
     const date = new Date();
@@ -454,4 +473,9 @@ function getCookie(name) {
         }
     }
     return null; // Return null if the cookie is not found
+}
+
+
+function splitMimeType(mimeType) {
+  return mimeType.split("/", 2);
 }

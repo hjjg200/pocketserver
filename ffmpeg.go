@@ -26,13 +26,84 @@ func initFFmpeg() {
 	arg0	= arg0[:len(arg0)-len(ext)]
 
 	// Check if the program is invoked as "ffmpeg" or the main app
-	if len(os.Args) > 1 &&
-		(arg0 == "ffmpeg" || arg0 == "ffprobe") {
+	if (arg0 == "ffmpeg" || arg0 == "ffprobe") {
+		if len(os.Args) == 1 {
+			logInfo(findFFmpegInPath())
+			os.Exit(0)
+		}
+
 		subFFmpeg(os.Args)
 		os.Exit(0)
 	} else {
 		ffmpegHandler = makeFFmpegHandler()
 	}
+}
+
+func findFFmpegInPath() (map[string]string, error) {
+
+	stems := []string{"ffmpeg", "ffprobe"}
+
+	// Get the PATH environment variable
+	pathEnv := os.Getenv("PATH")
+	if pathEnv == "" {
+		return nil, fmt.Errorf("$PATH is empty")
+	}
+
+	// Split PATH into directories
+	pathDirs := filepath.SplitList(pathEnv)
+
+	// Create a set for quick lookup of basenames
+	stemSet := make(map[string]struct{})
+	for _, stem := range stems {
+		stemSet[stem] = struct{}{}
+	}
+
+	// Map to store the first matches
+	matches := make(map[string]string)
+
+	// Search each directory in PATH
+	for _, dir := range pathDirs {
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			continue // Skip directories that cannot be read
+		}
+
+		for _, file := range files {
+			if file.IsDir() {
+				continue // Skip directories
+			}
+
+			// Get the file name
+			base := file.Name()
+
+			// Get the file basename (exclude extension)
+			stem := strings.TrimSuffix(base, filepath.Ext(base))
+
+			// Check if it matches any of the requested basenames
+			if _, found := stemSet[stem]; found {
+				// Ensure it's executable and not already matched
+				fullPath := filepath.Join(dir, base)
+
+				// Follow symlink
+				resolved, ok := resolveSymlink(fullPath)
+				if ok {
+					fullPath = resolved
+				}
+
+				// Check it is not pocketserver
+				if pocketExecPath, err := filepath.Abs(os.Args[0]);
+					err == nil && fullPath == pocketExecPath {
+					continue
+				}
+
+				if _, exists := matches[stem]; !exists {
+					matches[stem] = fullPath
+				}
+			}
+		}
+	}
+
+	return matches, nil
 }
 
 

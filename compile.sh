@@ -9,7 +9,7 @@ cp -r ffmpeg_pipe/dist/static ./
 
 ## Array of file paths
 ary_to_gzip=(
-    "$STATIC_PATH/ffmpeg/ffmpeg-core.wasm"
+    #"$STATIC_PATH/ffmpeg/ffmpeg-core.wasm"
     "$STATIC_PATH/ffmpeg/mt-ffmpeg-core.wasm"
 )
 

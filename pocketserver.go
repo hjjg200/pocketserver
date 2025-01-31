@@ -1,6 +1,7 @@
 package main
 
 import (
+	"hash"
 	"crypto/tls"
 	"fmt"
 	"bytes"
@@ -40,8 +41,7 @@ const AUTH_JSON = "auth.json"
 const CONTEXT_KEY_REQUEST_ID = 0
 const CONTEXT_KEY_REQUEST_START = 1
 const QUERY_ALBUM = "album"
-const QUERY_THUMBNAIL = "thumbnail"
-const QUERY_DETAILS = "details"
+const QUERY_METADATA = "metadata"
 const QUERY_CACHE = "cache"
 
 const MIME_IMAGE = "image"
@@ -70,6 +70,211 @@ var gMetadataManager *MetadataManager
 
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != http.MethodPost {
+		logHTTPRequest(r, -1, "Invalid method for upload")
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	mr, err := r.MultipartReader()
+	if err != nil {
+		logHTTPRequest(r, -1, "r.MultipartReader err:", err)
+		http.Error(w, "Cannot create multipart reader", http.StatusBadRequest)
+		return
+	}
+
+	// Handling uploads
+	album := filepath.Base(r.URL.Query().Get(QUERY_ALBUM))
+	uploadDir := filepath.Join(gAppInfo.UploadDir, album)
+	metaDir := filepath.Join(gAppInfo.MetadataDir, album)
+	fullpathFile := ""
+	fullpathProgress := ""
+	extInProgress := "." + fmt.Sprint(time.Now().Unix()) + ".inprogress"
+
+	keyMap := make(map[string] struct{})
+	var base, crc32_0, crc32_1 string
+	strPtrMap := map[string] *string{
+		"base": &base,
+		"crc": &crc32_0,
+	}
+
+	for {
+		
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+
+		// ---
+		if err != nil {
+			logHTTPRequest(r, -1, "mr.NextPart err:", err)
+			http.Error(w, "Error reading part", http.StatusBadRequest)
+			return
+		}
+		defer part.Close()
+
+		// Check part key
+		key := part.FormName()
+		_, ok := keyMap[key]
+		if ok {
+			logHTTPRequest(r, -1, "Duplicate keys")
+			http.Error(w, "Duplicate keys", http.StatusBadRequest)
+			return
+		}
+		keyMap[key] = struct{}{}
+
+		// Check part
+		if strings.HasPrefix(key, "metadata:") || key == "file" {
+
+			if len(strPtrMap) != 0 {
+				logHTTPRequest(r, -1, "Keys not found:", strPtrMap)
+				http.Error(w, "Keys not found", http.StatusBadRequest)
+				return
+			}
+
+			// Upload files
+			var hasher hash.Hash32
+			mw := io.MultiWriter()
+			fullpath := ""
+
+			if strings.HasPrefix(key, "metadata:") {
+
+				ext := key[9:]
+				if len(ext) <= 1 {
+					logHTTPRequest(r, -1, "Wrong formdata for upload metadata key:", key)
+					http.Error(w, "Wrong formdata for upload", http.StatusBadRequest)
+					return
+				}
+				fullpath = filepath.Join(metaDir, uploadDir, base) + ext
+
+			} else if key == "file" {
+				
+				fullpathFile = filepath.Join(uploadDir, base)
+
+				fullpath = fullpathFile + extInProgress
+				fullpathProgress = fullpath
+				hasher = crc32.NewIEEE()
+				mw = io.MultiWriter(hasher)
+
+			}
+
+			// ---
+			out, err := os.Create(fullpath)
+			if err != nil {
+				logHTTPRequest(r, -1, fullpath, "os.Create err:", err)
+				http.Error(w, "Error creating file", http.StatusInternalServerError)
+				return
+			}
+			mw = io.MultiWriter(mw, out)
+
+			// Read the file in chunks
+			buffer := make([]byte, 8*1024*1024) // 8 MB chunks // TODO perf config
+			for {
+
+				bytesRead, err := part.Read(buffer)
+				if err != nil && err != io.EOF {
+					logHTTPRequest(r, -1, fullpath, "part.Read err:", err)
+					http.Error(w, "Error reading from part", http.StatusInternalServerError)
+					out.Close()
+					return
+				}
+
+				if bytesRead == 0 {
+					break
+				}
+
+				// Update the hasher with the chunk
+				_, err = mw.Write(buffer[:bytesRead])
+				if err != nil {
+					logHTTPRequest(r, -1, fullpath, "out.Write err:", err)
+					http.Error(w, "Error writing to server", http.StatusInternalServerError)
+					out.Close()
+					return
+				}
+
+			}
+
+			out.Close()
+			// ---
+			if key == "file" {
+				crc32_1 = fmt.Sprintf("%x", hasher.Sum32())
+			}
+
+			logHTTPRequest(r, -1, base, key)
+
+		} else {
+			
+			ptr, ok := strPtrMap[key]
+			if !ok {
+				logHTTPRequest(r, -1, "Wrong form key:", key)
+				http.Error(w, "Wrong form keys", http.StatusBadRequest)
+				return
+			}
+
+			buf := make([]byte, 512)
+			read, err := part.Read(buf)
+			if err != nil && err != io.EOF {
+				logHTTPRequest(r, -1, "ioutil.ReadAll err:", err)
+				http.Error(w, "Error reading part", http.StatusBadRequest)
+				return
+			}
+
+			*ptr = string(buf[:read])
+			delete(strPtrMap, key)
+
+			//
+			if key == "base" {
+				base = recursiveNewName(uploadDir, base)
+			}
+
+		}
+
+	}
+
+	// ---
+	if _, hasFile := keyMap["file"]; !hasFile {
+		logHTTPRequest(r, -1, "file not found")
+		http.Error(w, "file not found", http.StatusBadRequest)
+		return
+	}
+
+	// Check file
+	if crc32_0 != crc32_1 {
+		logHTTPRequest(r, -1, base, "crc mismatch", crc32_0, crc32_1)
+		http.Error(w, "crc doesn't match", http.StatusInternalServerError)
+		return
+	}
+
+	err = os.Rename(fullpathProgress, fullpathFile)
+	if err != nil {
+		logHTTPRequest(r, -1, fullpathProgress, "os.Rename err:", err)
+		http.Error(w, "Error changing name", http.StatusInternalServerError)
+		return
+	}
+
+	info, err := os.Stat(fullpathFile)
+	if err != nil {
+		logHTTPRequest(r, -1, fullpathFile, "os.Stat err:", err)
+		http.Error(w, "Error doing stat of uploaded file", http.StatusInternalServerError)
+		return
+	}
+
+	// Set metadata
+	err = gMetadataManager.SetMetadata(uploadDir, base, info, crc32_0)
+	if err != nil {
+		logHTTPRequest(r, -1, "Failed to set metadata err:", err)
+		http.Error(w, "Failed to set metadata", http.StatusInternalServerError)
+		return
+	}
+
+	logHTTPRequest(r, -1, "UPLOAD", base, crc32_0)
+
+}
+
+
+
+func uploadHandler2(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodPost {
 		logHTTPRequest(r, -1, "Invalid method for upload")
@@ -322,34 +527,18 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		filepath.Base(album),
 	)
 	fullpath := filepath.Join(dir, base)
+	metaSuffix := query.Get(QUERY_METADATA)
 
-	if query.Has(QUERY_THUMBNAIL) {
+	if metaSuffix != "" {
 
-		// Fallback
-		cat := getMimeCategory(base)
-		fallback := "/static/placeholder.svg"
-		if cat == "audio" {
-			fallback = "/static/default_artwork.svg"
-		}
-
-		// Paths
-		thumbpath := filepath.Join(gAppInfo.MetadataDir, fullpath)
-		if query.Get(QUERY_THUMBNAIL) == "small" {
-			thumbpath += META_EXT_THUMB_SMALL
-			w.Header().Set("Cache-Control", "public, no-cache") // cache small ones
-			w.Header().Set("Content-Type", "image/webp")
-		} else {
-			thumbpath += META_EXT_THUMB
-			w.Header().Set("Cache-Control", "public, no-store")
-			w.Header().Set("Content-Type", "image/jpeg")
-		}
+		metaFullpath := filepath.Join(gAppInfo.MetadataDir, fullpath) + metaSuffix
 
 		// Check mod time
-		info, err := os.Stat(thumbpath)
+		info, err := os.Stat(metaFullpath)
 		if err != nil {
 			// TODO if client has image advise it to use it
-			logHTTPRequest(r, -1, "Failed to read thumbnail err:", err)
-			http.Redirect(w, r, fallback, http.StatusSeeOther)
+			logHTTPRequest(r, -1, "Failed to stat metadata err:", err)
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		if checkNotModified(r, info.ModTime()) {
@@ -357,15 +546,16 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Read thumbnail
-		thumb, err := os.ReadFile(thumbpath)
-		if err != nil || len(thumb) == 0 {
-			logHTTPRequest(r, -1, "Failed to read thumbnail err:", err)
-			http.Redirect(w, r, fallback, http.StatusSeeOther)
+		// Read metadata
+		meta, err := os.ReadFile(metaFullpath)
+		if err != nil || len(meta) == 0 {
+			logHTTPRequest(r, -1, "Failed to read metadata err:", err)
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 
-		http.ServeContent(w, r, base, info.ModTime(), bytes.NewReader(thumb))
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		http.ServeContent(w, r, base+metaSuffix, info.ModTime(), bytes.NewReader(meta))
 
 	} else {
 			
@@ -373,7 +563,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		file, err := os.Open(fullpath)
 		if os.IsNotExist(err) {
 			logHTTPRequest(r, -1, "view Not Found", fullpath)
-			http.Error(w, "File not found", http.StatusNotFound)
+			w.WriteHeader(http.StatusNotFound)
 			return
 		} else if err != nil {
 			logHTTPRequest(r, -1, "view os.Open", fullpath,  err)
@@ -677,6 +867,7 @@ func main() {
 	mux.HandleFunc("/list", listHandler)
 	mux.HandleFunc("/editPlaylist", editPlaylistHandler)
 	mux.HandleFunc("/signout", signoutHandler)
+	mux.Handle("/api/", apiMux)
 	// MUX - WebSockets
 	mux.HandleFunc("/ws/ffmpeg", ffmpegHandler)
 

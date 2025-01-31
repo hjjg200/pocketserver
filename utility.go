@@ -2,6 +2,7 @@
 package main
 
 import (
+    "container/list"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -19,6 +20,7 @@ import (
 	"math/big"
 	"net"
 	"path/filepath"
+	"mime"
 	"os"
 	"sync/atomic"
 	"strings"
@@ -623,6 +625,38 @@ func getInternetInterface() (string, error) {
 }*/
 
 
+// Resolve symlink relative to the directory it resides in
+func resolveSymlink(fullPath string) (string, bool) {
+
+	// Check if the file exists and is executable
+	info, err := os.Lstat(fullPath)
+	if err != nil {
+		return "", false
+	}
+
+	// If the file is a symlink, resolve it
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", false
+	}
+		
+	target, err := os.Readlink(fullPath)
+	if err != nil {
+		return "", false
+	}
+
+	// Check if the symlink is relative or absolute
+	if !filepath.IsAbs(target) {
+		// Resolve relative symlink based on the base directory
+		target = filepath.Join(filepath.Dir(fullPath), target)
+	}
+
+	// Clean and evaluate the final path
+	return filepath.Clean(target), true
+
+}
+
+
+
 // FORMATTING
 
 func generateRandomString(length int) (string, error) {
@@ -649,7 +683,175 @@ func formatShortTimestamp(since time.Time, at time.Time) string {
 
 }
 
+func getCRC32OfFile(fullpath string) (string, error) {
+	f, err := os.Open(fullpath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	hasher := crc32.NewIEEE()
+	io.Copy(hasher, f)
+	return fmt.Sprintf("%x", hasher.Sum32()), nil
+}
+
 func getCRC32OfBytes(data []byte) string {
 	crc32Hash := crc32.ChecksumIEEE(data)
 	return fmt.Sprintf("%x", crc32Hash)
+}
+
+func mimeTypeByName(name string) string {
+	return mime.TypeByExtension(filepath.Ext(name))
+}
+
+// LRU
+
+// LRUCache represents a concurrency-safe LRU cache with time-based eviction.
+type LRUCache[K comparable, V any] struct {
+	capacity int
+	expiry   time.Duration
+	mutex    sync.RWMutex
+	cache    map[K]*list.Element
+	list     *list.List
+}
+
+// entry represents a key-value pair stored in the linked list, along with the time it was added.
+type entry[K comparable, V any] struct {
+	key     K
+	value   V
+	addedAt time.Time
+}
+
+// NewLRUCache creates a new LRUCache with the given capacity and expiry duration.
+// Returns nil if the capacity is less than or equal to zero or expiry is non-positive.
+func NewLRUCache[K comparable, V any](capacity int, expiry time.Duration) *LRUCache[K, V] {
+	if capacity <= 0 {
+		return nil
+	}
+	if expiry <= 0 {
+		return nil
+	}
+	return &LRUCache[K, V]{
+		capacity: capacity,
+		expiry:   expiry,
+		cache:    make(map[K]*list.Element),
+		list:     list.New(),
+	}
+}
+
+// Get retrieves the value associated with the given key.
+// If the entry has expired, it evicts the entry and returns not found.
+func (c *LRUCache[K, V]) Get(key K) (V, bool) {
+	c.mutex.RLock()
+	elem, found := c.cache[key]
+	c.mutex.RUnlock()
+
+	if !found {
+		var zero V
+		return zero, false
+	}
+
+	// Acquire write lock to potentially modify the list
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	// Re-check to ensure the element wasn't removed between locks
+	elem, found = c.cache[key]
+	if !found {
+		var zero V
+		return zero, false
+	}
+
+	ent := elem.Value.(*entry[K, V])
+
+	// Check if the entry has expired
+	if time.Since(ent.addedAt) > c.expiry {
+		// Evict the expired entry
+		c.list.Remove(elem)
+		delete(c.cache, key)
+		var zero V
+		return zero, false
+	}
+
+	// Move the accessed element to the front (most recently used)
+	c.list.MoveToFront(elem)
+	return ent.value, true
+}
+
+// Put inserts or updates the value associated with the given key.
+// If the cache exceeds its capacity, it evicts the least recently used item.
+// Records the time when the entry was added.
+func (c *LRUCache[K, V]) Put(key K, value V) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if elem, found := c.cache[key]; found {
+		// Update existing entry
+		c.list.MoveToFront(elem)
+		ent := elem.Value.(*entry[K, V])
+		ent.value = value
+		ent.addedAt = time.Now()
+		return
+	}
+
+	if c.list.Len() >= c.capacity {
+		c.evict()
+	}
+
+	// Insert new entry
+	newEntry := &entry[K, V]{key: key, value: value, addedAt: time.Now()}
+	elem := c.list.PushFront(newEntry)
+	c.cache[key] = elem
+}
+
+// evict removes the least recently used item from the cache.
+func (c *LRUCache[K, V]) evict() {
+	elem := c.list.Back()
+	if elem == nil {
+		return
+	}
+	c.list.Remove(elem)
+	kv := elem.Value.(*entry[K, V])
+	delete(c.cache, kv.key)
+}
+
+// Remove deletes the key-value pair associated with the given key from the cache.
+// Returns the removed value and a boolean indicating whether the key was found.
+func (c *LRUCache[K, V]) Remove(key K) (V, bool) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if elem, found := c.cache[key]; found {
+		c.list.Remove(elem)
+		delete(c.cache, key)
+		return elem.Value.(*entry[K, V]).value, true
+	}
+	var zero V
+	return zero, false
+}
+
+// Len returns the current number of items in the cache.
+func (c *LRUCache[K, V]) Len() int {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.list.Len()
+}
+
+// Clear removes all items from the cache.
+func (c *LRUCache[K, V]) Clear() {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.cache = make(map[K]*list.Element)
+	c.list.Init()
+}
+
+// Keys returns a slice of keys in the cache, ordered from most to least recently used.
+func (c *LRUCache[K, V]) Keys() []K {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+
+	keys := make([]K, 0, c.list.Len())
+	for elem := c.list.Front(); elem != nil; elem = elem.Next() {
+		keys = append(keys, elem.Value.(*entry[K, V]).key)
+	}
+	return keys
 }

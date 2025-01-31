@@ -3,27 +3,26 @@ package main
 import (
 	"time"
 	"fmt"
+	"io/fs"
 	"sync"
 	"sync/atomic"
 	"path/filepath"
 	"os"
 	"strings"
 	"encoding/json"
-	"mime"
 )
 
 type Metadata struct {
-	ModTime			time.Time `json:"modTime"`
-	Size			int64     `json:"size"`
-	IsDir			bool      `json:"isDir"`
-	MimeCategory	string `json:"mimeCategory"`
-	
-	Details			map[string] string `json:"details"`
+	ModTime			time.Time	`json:"modTime"`
+	Size			int64		`json:"size"`
+	IsDir			bool		`json:"isDir"`
+	MimeType		string		`json:"mimeType"`
+	Crc32			string		`json:"crc32"`
 }
-type MetadataMap map[string]*Metadata
+type MetadataMap map[string] *Metadata
 type MetadataBody struct {
-	MetaMap		MetadataMap `json:"metaMap"`
-	Playlist	[]string `json:"playlist"`
+	MetaMap		MetadataMap	`json:"metaMap"`
+	Playlist	[]string	`json:"playlist"`
 }
 
 type metadataCache struct {
@@ -31,7 +30,6 @@ type metadataCache struct {
 
 	body			MetadataBody
 	bodyMu			sync.Mutex
-	detailsWg		sync.WaitGroup
 	json			atomic.Pointer[[]byte]
 	dir				string
 
@@ -39,8 +37,7 @@ type metadataCache struct {
 }
 
 type MetadataManager struct {
-	bakeSem		*Semaphore
-	cacheMap	map[string]*metadataCache
+	cacheMap	map[string] *metadataCache
 	cacheMapMu	sync.RWMutex // cache registration
 	updateMu	sync.Mutex // only one update at a time
 }
@@ -50,19 +47,25 @@ func NewMetadataManager() *MetadataManager {
 
 	mgr := &MetadataManager{}
 
-	mgr.bakeSem		= NewSemaphore(gPerformanceConfig.MaxConcurrentFFmpeg, 0)
 	mgr.cacheMap	= make(map[string]*metadataCache)
 
 	return mgr
 
 }
 
-func (mgr *MetadataManager) Get(dir string) ([]byte, bool) {
-
+func (mgr *MetadataManager) getCache(dir string) (*metadataCache, bool) {
+	
 	mgr.cacheMapMu.RLock()
 	defer mgr.cacheMapMu.RUnlock()
 
 	cache, ok := mgr.cacheMap[dir]
+	return cache, ok
+
+}
+
+func (mgr *MetadataManager) Get(dir string) ([]byte, bool) {
+
+	cache, ok := mgr.getCache(dir)
 	if !ok {
 		return nil, false
 	}
@@ -81,26 +84,17 @@ func (cache *metadataCache) updateJson() {
 
 	err = os.WriteFile(cache.mgr.formatDirCacheName(cache.dir), data, 0644)
 	if err != nil {
-		logError("Failed to write cache file", cache.dir)
+		logError("Failed to write cache file", cache.dir, "err:", err)
 	}
 
 }
 
 func (mgr *MetadataManager) EditPlaylist(dir string, pl1 []string) error {
 	
-	mgr.cacheMapMu.RLock()
-	defer mgr.cacheMapMu.RUnlock()
-
-	cache, ok := mgr.cacheMap[dir]
+	cache, ok := mgr.getCache(dir)
 	if !ok {
 		return fmt.Errorf("Dir not found")
 	}
-
-	return cache.editPlaylist(pl1)
-
-}
-
-func (cache *metadataCache) editPlaylist(pl1 []string) error {
 
 	cache.bodyMu.Lock()
 	defer cache.bodyMu.Unlock()
@@ -109,7 +103,7 @@ func (cache *metadataCache) editPlaylist(pl1 []string) error {
 		if meta, ok := cache.body.MetaMap[base]; !ok {
 			return fmt.Errorf("File doesn't exist", base)
 		} else {
-			if meta.MimeCategory != MIME_AUDIO {
+			if strings.SplitN(meta.MimeType, "/", 2)[0] != MIME_AUDIO {
 				return fmt.Errorf("Not an audio file", base)
 			}
 		}
@@ -122,11 +116,42 @@ func (cache *metadataCache) editPlaylist(pl1 []string) error {
 
 }
 
-func (mgr *MetadataManager) parseDirCacheName(formatted string) string {
-	splits := strings.Split(formatted, META_SLASH_IN_FILENAME)
-	dir := filepath.Join(splits...)
-	logDebug(formatted, dir)
-	return dir
+func (mgr *MetadataManager) GetMetadata(dir, base string) (Metadata, bool) {
+
+	cache, ok := mgr.getCache(dir)
+	if !ok {
+		return Metadata{}, false
+	}
+
+	cache.bodyMu.Lock()
+	defer cache.bodyMu.Unlock()
+
+	meta, ok := cache.body.MetaMap[base]
+	return *meta, ok
+
+}
+
+func (mgr *MetadataManager) SetMetadata(dir, base string, info fs.FileInfo, crc string) error {
+
+	cache, ok := mgr.getCache(dir)
+	if !ok {
+		return fmt.Errorf("Dir not found")
+	}
+
+	cache.bodyMu.Lock()
+	defer cache.bodyMu.Unlock()
+
+	cache.body.MetaMap[base] = &Metadata{
+		ModTime:	info.ModTime(),
+		Size:		info.Size(),
+		IsDir:		info.IsDir(),
+		MimeType:	mimeTypeByName(base),
+		Crc32:		crc,
+	}
+	cache.updateJson()
+
+	return nil
+
 }
 
 func (mgr *MetadataManager) formatDirCacheName(dir string) string {
@@ -179,7 +204,7 @@ func (cache *metadataCache) _update() {
 
 	// Check if changed
 	logInfo("Caching for", dir, "starting")
-	dentries, err := os.ReadDir(dir)
+	dentries, err := ioReadDir(dir)
 	if err != nil {
 		logError(fmt.Errorf("Cannot read directory %s: %w", dir, err))
 		return
@@ -197,7 +222,6 @@ func (cache *metadataCache) _update() {
 
 		fullpath	:= filepath.Join(dir, dentry.Name())
 		base		:= dentry.Name()
-		ext			:= filepath.Ext(base)
 		info, err	:= dentry.Info()
 		if err != nil {
 			logWarn("Failed to read info of", fullpath, err)
@@ -221,14 +245,18 @@ func (cache *metadataCache) _update() {
 		mm1[base].ModTime		= info.ModTime()
 		mm1[base].Size			= info.Size()
 		mm1[base].IsDir			= info.IsDir()
-		mm1[base].MimeCategory	= getMimeCategory(fullpath)
+		mm1[base].MimeType		= mimeTypeByName(fullpath)
 
-		// Check if it is eligible for details
-		if mm1[base].MimeCategory == MIME_AUDIO ||
-			mm1[base].MimeCategory == MIME_VIDEO ||
-			ext == ".webp" {
+		// For files
+		if false == info.IsDir() {
 			
-			cache.ensureMetadataDetails(fullpath, mm1[base])
+			// Check crc
+			if mm1[base].Crc32 == "" || mm1[base].Crc32 == "0" {
+				mm1[base].Crc32, err = getCRC32OfFile(fullpath)
+				if err != nil {
+					logWarn("Failed to get CRC of file:", fullpath)
+				}
+			}
 
 		}
 
@@ -261,7 +289,8 @@ func (cache *metadataCache) _update() {
 
 	// PLAYLIST append added
 	for base := range mm1 {
-		if _, ok := pl1keys[base]; !ok && mm1[base].MimeCategory == MIME_AUDIO {
+		if _, ok := pl1keys[base]; !ok &&
+			strings.SplitN(mm1[base].MimeType, "/", 2)[0] == MIME_AUDIO {
 			pl1 = append(pl1, base)
 			logDebug("ADD TO PLAYLIST", dir, base)
 		}
@@ -273,7 +302,6 @@ func (cache *metadataCache) _update() {
 
 	logInfo("Updated cache of", dir, "-", added, "added,", modified, "modified,", removed, "removed")
 
-	cache.detailsWg.Wait()
 	cache.updateJson()
 
 	cache.bodyMu.Unlock()
@@ -298,7 +326,7 @@ func (mgr *MetadataManager) UpdateDir(dir string) error {
 	 return nil
 
 }
-
+/*
 func (cache *metadataCache) ensureMetadataDetails(fullpath string, meta *Metadata) {
 
 	cache.detailsWg.Add(1)
@@ -373,51 +401,9 @@ func (cache *metadataCache) scheduleMetadataDetails(fullpath string, meta *Metad
 	}()
 
 }
-
-func getMimeCategory(path string) string {
-
-	// Treat the extensions handled specially only
-	// image/* audio/* video/*
-
-	ext := strings.ToLower(filepath.Ext(path))
-	if ext == "" {
-		return ""
-	}
-
-	mimeType := mime.TypeByExtension(ext)
-	if mimeType == "" {
-		return ""
-	}
-
-	return strings.Split(mimeType, "/")[0]
-
-/*
-	cat := ""
-
-	videos := []string{
-		".mp4", ".webm", ".mov", ".mkv",
-	}
-	images := []string{
-		".webp", ".jpg", ".jpeg", ".gif", ".heic", ".heif", ".tiff", ".tif", ".png",
-	}
-	audios := []string{
-		".mp3", ".opus", // TODO iOS opus handling
-	}
-
-	if slices.Contains(videos, ext) {
-		cat = MIME_VIDEO
-	} else if slices.Contains(images, ext) {
-		cat = MIME_IMAGE
-	} else if slices.Contains(audios, ext) {
-		cat = MIME_AUDIO
-	}
-
-	return cat
 */
 
-}
-
-
+/*
 func (mgr *MetadataManager) bakeMetadataDetails(fullpath string, meta *Metadata) (err error) {
 
 	cat		  := meta.MimeCategory
@@ -554,3 +540,4 @@ func (mgr *MetadataManager) bakeMetadataDetails(fullpath string, meta *Metadata)
 	return nil
 
 }
+*/

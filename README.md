@@ -112,11 +112,17 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 
 ## TODO
 
+- priority
+    - api.json
+    - upload metadata during upload time
+    - let http client do ffmpeg tasks for nonexistent metadata (increase channel buffer size)
+    - sound check audio files (parallel exec)
+    - use multiple websocket for parallel ffmpeg
+    - on ffmepg fail, delegate to ffmpeg first found in PATH that is not itself
+    - on iSH ffmpeg wasm is priortized over native ffmpeg, on non-iSH opposite way
 - FFmpeg piping (iSH <-> ffmpeg.wasm)
     - memory leak check
     - video compressor
-    - music sound check run once during upload time, instead of javascript wav method
-    - metadata extraction during upload time
     - ...
 - Reload images src when non-cache fetch finished
 - log functions fix argument handling
@@ -143,5 +149,6 @@ yt-dlp --extract-audio --audio-format best --embed-thumbnail --add-metadata --me
 alias goish='CC=i686-linux-musl-gcc CGO_ENABLED=1 GOOS=linux GOARCH=386 go'
 
 ffmpeg -i in.mp3 -map 0:a -map 0:v:0 -c:a aac -c:v mjpeg -disposition:v attached_pic out.m4a
+ffprobe -v quiet -print_format json -show_format -show_entries format_tags=album,artist,title,comment:format=duration
 ```
 

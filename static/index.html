@@ -1,152 +1,158 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>Pocketserver</title>
-        <link rel="icon" href="data:image/png;base64,iVBORw0KGgo=">
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+  <head>
+    <title>Pocketserver</title>
+    <link rel="icon" href="data:image/png;base64,iVBORw0KGgo=">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        <link rel="stylesheet" href="/static/settled.css">
-        <link rel="stylesheet" href="/static/style.css">
-    </head>
-    <body>
-        <div class="main-wrap">
-        <div class="main-container">
+    <link rel="stylesheet" href="/static/settled.css">
+    <link rel="stylesheet" href="/static/style.css">
 
-
-            <div class="drag-indicator" style="display: none;">
-                Drop files to upload...
-            </div>
-
-            <div class="server-info-container">
-                <span class="memstats">-</span>
-                <div class="status">
-                    <div class="status-light"></div>
-                    <div class="status-text"></div>
-                </div>
-            </div>
-
-            <div class="upload-form-wrap">
-                <div class="upload-button-wrap">
-                    <label>
-                        Upload
-                        <input type="file" id="upload-input" name="filename" multiple>
-                    </label>
-                </div>
-                <div class="upload-options" style="display: none;">
-                    <div class="cache-album-container">
-                        <label>
-                            <input type="checkbox" id="cache-album">
-                            <span>Cache Album</span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <div class="upload-info-container" style="display: none;">
-                <div class="file-no">1 of 1</div>
-                <div class="file-name">asdasd.jpg</div>
-                <div class="progress-bar-bg">
-                    <div class="progress-bar"></div>
-                </div>
-                <div class="progress-info">
-                    <span class="speed">12.34 MB/s</span>
-                    <span class="time">00:04</span>
-                </div>
-            </div>
-
-            <div class="ffmpeg-log-container">
-                <div class="ffmpeg-log">
-                </div>
-            </div>
-
-            <div class="album-title-container">
-
-                <div class="back-to-home">
-                    <img src="/static/back.svg" alt="">
-                    <div>Back to home</div>
-                </div>
-                <div class="album-title">-</div>
-                
-            </div>
-
-            <div class="albums-list">
-                <div class="album-create">
-                    <img src="/static/plus.svg?f=%23aaa" alt="">
-                    <div>Create Album</div>
-                </div></div>
-
-            <div class="music-player-container no-songs">
-                <div class="music-player">
-                    <div class="album-art-container">
-                        <canvas class="cover-bg"></canvas>
-                        <img class="cover"></img>
-                        <img class="album-art"></img>
-                    </div>
-                    <div class="buttons">
-                        <audio style="display: none;">
-                        </audio>
-                        <div class="prev button"><img src="/static/prevtrack.svg" alt=""></div>
-                        <div class="play-pause">
-                            <div class="play button"><img src="/static/play.svg" alt=""></div>
-                            <div class="pause button"><img src="/static/pause.svg" alt=""></div>
-                        </div>
-                        <div class="next button"><img src="/static/nexttrack.svg" alt=""></div>
-                    
-                    </div>
-                        <div class="seeker">
-                            <div class="slider-inner">
-                                <div class="slider-fill"></div>
-                            </div>
-                        </div>
-                        <div class="sub-buttons">
-                        
-                            <div class="volume-container">
-                                <div class="button"><img src="/static/volume.svg" alt=""></div>
-                                <div class="slider" style="display: none;">
-                                    <div class="slider-fill"></div>
-                                </div>
-                            </div>
-                            <div class="shuffle button"><img src="/static/shuffle.svg" alt=""></div>
-                        </div>
-                </div>
-                <ul class="music-playlist">
-                    <!--<li>
-                        <div class="left">
-                            <div class="title">Odoriko</div>
-                            <div class="artist">Vaundy</div>    
-                        </div>
-                        <div class="right">
-                            03:50
-                        </div>
-                    </li>-->
-                </ul>
-                    
-            </div>
-
-            <div class="total-size-info">-</div>
-
-            <div class="others-container">
-
-            </div>
-            <div class="media-container">
-                
-            </div>
-        </div>
-        </div>
-    </body>
     <script type="module" src="/static/ffmpeg_pipe.js"></script>
-    <script src="/static/crc32.js"></script>
+    <script src="/static/hash-wasm/sha1.umd.min.js"></script>
+    <script src="/static/hash-wasm/crc32.umd.min.js"></script>
     <script src="/static/utility.js"></script>
-    <script src="/static/soundcheck.js"></script>
-    <script>
+  </head>
+  <body>
+    <div class="main-wrap">
+    <div class="main-container">
+
+
+      <div class="drag-indicator" style="display: none;">
+        Drop files to upload...
+      </div>
+
+      <div class="server-info-container">
+        <span class="memstats">-</span>
+        <div class="status">
+          <div class="status-light"></div>
+          <div class="status-text"></div>
+        </div>
+      </div>
+
+      <div class="upload-form-wrap">
+        <div class="upload-button-wrap">
+          <label>
+            Upload
+            <input type="file" id="upload-input" name="filename" multiple>
+          </label>
+        </div>
+        <div class="upload-options" style="display: none;">
+          <div class="cache-album-container">
+            <label>
+              <input type="checkbox" id="cache-album">
+              <span>Cache Album</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="upload-info-container" style="display: none;">
+        <div class="file-no">1 of 1</div>
+        <div class="file-name">asdasd.jpg</div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar"></div>
+        </div>
+        <div class="progress-info">
+          <span class="speed">12.34 MB/s</span>
+          <span class="time">00:04</span>
+        </div>
+      </div>
+
+      <div class="ffmpeg-log-container">
+        <div class="ffmpeg-log">
+        </div>
+      </div>
+
+      <div class="album-title-container">
+
+        <div class="back-to-home">
+          <img src="/static/back.svg" alt="">
+          <div>Back to home</div>
+        </div>
+        <div class="album-title">-</div>
+        
+      </div>
+
+      <div class="albums-list">
+        <div class="album-create">
+          <img src="/static/plus.svg?f=%23aaa" alt="">
+          <div>Create Album</div>
+        </div></div>
+
+      <div class="music-player-container no-songs">
+        <div class="music-player">
+          <div class="album-art-container">
+            <canvas class="cover-bg"></canvas>
+            <img class="cover"></img>
+            <img class="album-art"></img>
+          </div>
+          <div class="buttons">
+            <audio style="display: none;">
+            </audio>
+            <div class="prev button"><img src="/static/prevtrack.svg" alt=""></div>
+            <div class="play-pause">
+              <div class="play button"><img src="/static/play.svg" alt=""></div>
+              <div class="pause button"><img src="/static/pause.svg" alt=""></div>
+            </div>
+            <div class="next button"><img src="/static/nexttrack.svg" alt=""></div>
+          
+          </div>
+            <div class="seeker">
+              <div class="slider-inner">
+                <div class="slider-fill"></div>
+              </div>
+            </div>
+            <div class="sub-buttons">
+            
+              <div class="volume-container">
+                <div class="button"><img src="/static/volume.svg" alt=""></div>
+                <div class="slider" style="display: none;">
+                  <div class="slider-fill"></div>
+                </div>
+              </div>
+              <div class="shuffle button"><img src="/static/shuffle.svg" alt=""></div>
+            </div>
+        </div>
+        <ul class="music-playlist">
+          <!--<li>
+            <div class="left">
+              <div class="title">Odoriko</div>
+              <div class="artist">Vaundy</div>    
+            </div>
+            <div class="right">
+              03:50
+            </div>
+          </li>-->
+        </ul>
+          
+      </div>
+
+      <div class="total-size-info">-</div>
+
+      <div class="others-container">
+
+      </div>
+      <div class="media-container">
+        
+      </div>
+    </div>
+    </div>
+  </body>
+  <script src="/static/soundcheck.js"></script>
+  <script>
 
 const DEFAULT_ARTWORK = "/static/default_artwork.svg";
 const PLACEHOLDER_IMAGE = "/static/placeholder.svg";
 
+const EXT_META_AUDIO_THUMB = ".webp";
+const EXT_META_AUDIO_THUMB_SMALL = "_small.webp";
+const EXT_META_VIDEO_THUMB = ".webp";
+const EXT_META_TEXT = ".json";
+
 const QUERY_ALBUM = "album";
-const QUERY_THUMBNAIL = "thumbnail";
-const QUERY_DETAILS = "details";
+const QUERY_METADATA = "metadata";
 const QUERY_CACHE = "cache";
 const URL_VIEW = "/view";
 const URL_LIST = "/list";
@@ -156,57 +162,170 @@ const TYPES_MEDIA = ["image", "video", "audio"];
 let gDEBUG = false;
 
 document.addEventListener("DOMContentLoaded", () => {
-    checkServer();
+  checkServer();
 });
 
 
 (() => { // FFMPEG
 
-    const maxFFmpegLogCount = 3000;
+  const maxFFmpegLogCount = 3000;
 
-    const ffmpegLogContainerEl = document.querySelector(".ffmpeg-log-container");
-    const ffmpegLogEl = document.querySelector(".ffmpeg-log");
-
-    ffmpegLogEl.addEventListener("click", event => {
-        const span = event.target.closest("span");
-        if (span) {
-            ffmpegLogEl.classList.toggle("full");
-            span.classList.add("focus");
-            setTimeout(() => span.classList.remove("focus"), 100);
-            ensureLiVisibility(ffmpegLogEl, span);
-        }
-    });
-    window.ffmpegLog = (typ, ...args) => {
-        const spans = Array.from(ffmpegLogEl.querySelectorAll("span"));
-        const span = createElement("span", typ);
-
-        // Handle carriage return
-        let msg = args.join(" ");
-        const cr = msg.lastIndexOf("\r");
-        if (cr !== -1)
-            msg = msg.slice(cr);
-
-        if (typ !== "internal")
-            msg = "[FFmpeg] " + msg;
+  const subMetaCommands = [
+    {
+      "input": 2,
+      "output": 9,
+      "outputExt": EXT_META_TEXT,
+      "outputMimeType": "application/json",
+      "outputPost": async (blob) => {
+        const txtMeta = JSON.parse(await blob.text());
+        if (!txtMeta.format?.duration || txtMeta.format?.duration === "N/A")
+          throw new Error("Not a media");
         
-        // Message
-        span.textContent = msg;
-        if (typ === "error")
-            console.error(msg);
+        const post = {};
+        post.duration = txtMeta.format.duration;
+        post.album = txtMeta.format.tags?.album || "";
+        post.artist = txtMeta.format.tags?.artist || "";
+        post.title = txtMeta.format.tags?.title || "";
 
-        // Remove excessive logs
-        while (spans.length > maxFFmpegLogCount-1)
-            spans.shift().remove();
+        return new Blob([JSON.stringify(post)], { type: "application/json" });
 
-        ffmpegLogEl.appendChild(span);
+      },
+      "mimeTypes": ["audio/*", "video/*", "*/webp"],
+      "args": [
+        "ffprobe", "-i", "",
+        "-show_format",
+        "-show_entries", "format_tags=album,artist,title,comment:format=duration",
+        "-print_format", "json",
+        "-o", ""
+      ]
+    },
+    {
+      "input": 2,
+      "output": 16,
+      "outputExt": EXT_META_VIDEO_THUMB,
+      "outputMimeType": "image/webp",
+      "mimeTypes": ["video/*", "*/webp"],
+      "args": [
+        "ffmpeg", "-i", "",
+        "-c:v", "libwebp",
+        "-threads", "1",
+        "-q:v", "80",
+        "-pix_fmt", "yuv420p",
+        "-an",
+        "-ss", "00:00:01",
+        "-vframes", "1",
+        ""
+      ]
+    },
+    {
+      "input": 2,
+      "output": 12,
+      "outputExt": EXT_META_AUDIO_THUMB,
+      "outputMimeType": "image/webp",
+      "mimeTypes": ["audio/*"],
+      "args": [
+        "ffmpeg", "-i", "",
+        "-c:v", "libwebp",
+        "-threads", "1",
+        "-q:v", "80",
+        "-pix_fmt", "yuv420p",
+        "-an",
+        ""
+      ]
+    },
+    {
+      "input": 2,
+      "output": 14,
+      "outputExt": EXT_META_AUDIO_THUMB_SMALL,
+      "outputMimeType": "image/webp",
+      "mimeTypes": ["audio/*"],
+      "args": [
+        "ffmpeg", "-i", "",
+        "-c:v", "libwebp",
+        "-threads", "1",
+        "-q:v", "80",
+        "-pix_fmt", "yuv420p",
+        "-an",
+        "-vf", "scale=iw*sqrt(16384/(iw*ih)):-1",
+        ""
+      ]
+    }
+  ];
 
-        // Scroll to bottom if it is already bottom
-        if (ffmpegLogEl.classList.contains("full") === false)
-            ffmpegLogEl.scrollTo({ top: ffmpegLogEl.scrollHeight, behavior: "smooth" });
-    };
-    window.ffmpegLogShow = () => {
-        ffmpegLogContainerEl.style.display = "block";
-    };
+  async function getEligibleCommands(name, cmds) {
+    const ret = [];
+    const mimeType = await (await fetch(buildURL("/api/typeByName", { "name": name }))).text();
+
+    for (let cmd of cmds) {
+      for (let mimeTypeCond of cmd.mimeTypes) {
+        const parts = mimeType.split("/", 2);
+        const partsCond = mimeTypeCond.split("/", 2);
+
+        if (false === (partsCond[0] === "*" || partsCond[0] === parts[0]))
+          continue;
+
+        if (false === (partsCond[1] === "*" || partsCond[1] === parts[1]))
+          continue;
+
+        ret.push(cmd);
+        break;
+      }
+    }
+    return ret;
+  }
+
+  window.ffmpegAttemptMetadata = async function(name, input) {
+
+    const cmds = await getEligibleCommands(name, subMetaCommands);
+    if (cmds.length === 0) return {};
+
+    return await ffmpegRunCommands(name, input, cmds);
+
+  };
+
+  const ffmpegLogContainerEl = document.querySelector(".ffmpeg-log-container");
+  const ffmpegLogEl = document.querySelector(".ffmpeg-log");
+
+  ffmpegLogEl.addEventListener("click", event => {
+    const span = event.target.closest("span");
+    if (span) {
+      ffmpegLogEl.classList.toggle("full");
+      span.classList.add("focus");
+      setTimeout(() => span.classList.remove("focus"), 100);
+      ensureLiVisibility(ffmpegLogEl, span);
+    }
+  });
+  window.ffmpegLog = (typ, ...args) => {
+    const spans = Array.from(ffmpegLogEl.querySelectorAll("span"));
+    const span = createElement("span", typ);
+
+    // Handle carriage return
+    let msg = args.join(" ");
+    const cr = msg.lastIndexOf("\r");
+    if (cr !== -1)
+      msg = msg.slice(cr);
+
+    if (typ !== "internal")
+      msg = "[FFmpeg] " + msg;
+    
+    // Message
+    span.textContent = msg;
+    if (typ === "error")
+      console.error(msg);
+
+    // Remove excessive logs
+    while (spans.length > maxFFmpegLogCount-1)
+      spans.shift().remove();
+
+    ffmpegLogEl.appendChild(span);
+
+    // Scroll to bottom if it is already bottom
+    if (ffmpegLogEl.classList.contains("full") === false)
+      ffmpegLogEl.scrollTo({ top: ffmpegLogEl.scrollHeight, behavior: "smooth" });
+  };
+  window.ffmpegLogShow = () => {
+    ffmpegLogContainerEl.style.display = "block";
+  };
 
 })();
 
@@ -223,1449 +342,1450 @@ document.addEventListener("DOMContentLoaded", () => {
 const mainWrap = document.body.querySelector(".main-wrap");
 
 (() => { // LIST
-        
-    // Album
-    window.gAlbum = null;
-
-    const albumTitleContainer = document.querySelector(".album-title-container");
-    const backToHome = albumTitleContainer.querySelector(".back-to-home");
-    const albumTitle = albumTitleContainer.querySelector(".album-title");
-    const albumsList = document.querySelector(".albums-list");
-    const albumCreate = albumsList.querySelector(".album-create");
-
     
-    document.addEventListener("DOMContentLoaded", () => {
-        changeAlbum(getQueryParam(QUERY_ALBUM));
-    });
+  // Album
+  window.gAlbum = null;
 
-    let formatSrc;
+  const albumTitleContainer = document.querySelector(".album-title-container");
+  const backToHome = albumTitleContainer.querySelector(".back-to-home");
+  const albumTitle = albumTitleContainer.querySelector(".album-title");
+  const albumsList = document.querySelector(".albums-list");
+  const albumCreate = albumsList.querySelector(".album-create");
 
-    async function changeAlbum(album) {
+  
+  document.addEventListener("DOMContentLoaded", () => {
+    changeAlbum(getQueryParam(QUERY_ALBUM));
+  });
 
-        if((album || "") === "") {
-            removeQueryParam(QUERY_ALBUM, true);
-            album = null;
-            document.body.classList.remove("is-album");
-        } else {
-            addQueryParam(QUERY_ALBUM, album, true);
-            document.body.classList.add("is-album");
-            albumTitle.textContent = album;
-        }
+  let formatSrc;
 
-        gAlbum = album;
-        await cleanupList();
-        await cleanupAudio();
-        await populateList();
-        await initializeAudio();
+  async function changeAlbum(album) {
 
-        await populateList(false); // Wait for full update
-
+    if((album || "") === "") {
+      removeQueryParam(QUERY_ALBUM, true);
+      album = null;
+      document.body.classList.remove("is-album");
+    } else {
+      addQueryParam(QUERY_ALBUM, album, true);
+      document.body.classList.add("is-album");
+      albumTitle.textContent = album;
     }
 
-    backToHome.addEventListener("click", () => {
-        changeAlbum(null);
-    });
-    window.addEventListener('popstate', (event) => {
-        changeAlbum(getQueryParam(QUERY_ALBUM));
-    });
+    gAlbum = album;
+    await cleanupList();
+    await cleanupAudio();
+    await populateList();
+    await initializeAudio();
 
-    function createAlbum(album) {
-        
-        if(albumsList.classList.contains("empty"))
-            albumsList.classList.remove("empty");
+    await populateList(false); // Wait for full update
 
-        const container = createElement("div", "album-container");
-        const thumbnail = createElement("div", "album-thumbnail");
-        const img  = createElement("img");
-        const info = createElement("div", "album-info");
-        const name = createElement("div", "name");
-        const sub = createElement("div", "sub");
+  }
 
-        name.textContent = album;
-        sub.textContent = "-";
+  backToHome.addEventListener("click", () => {
+    changeAlbum(null);
+  });
+  window.addEventListener('popstate', (event) => {
+    changeAlbum(getQueryParam(QUERY_ALBUM));
+  });
 
-        thumbnail.appendChild(img);
-
-        info.appendChild(name);
-        info.appendChild(sub);
-
-        container.appendChild(thumbnail);
-        container.appendChild(info);
-
-        container.addEventListener("click", () => {
-            changeAlbum(album);
-        });
-
-        container.update = () => {};
-        //container.remove
-
-        (async () => {
-            const url = buildURL(URL_LIST, {[QUERY_ALBUM]: album, [QUERY_CACHE]: null});
-            const response    = await fetch(url);
-            const { metaMap } = await response.json();
-
-            sub.textContent = formatAlbumInfo(metaMap);
-
-            const basename = Object.keys(metaMap)
-                .sort((a, b) => {
-                    return new Date(metaMap[b].modTime) - new Date(metaMap[a].modTime);
-                })
-                .find((k) => TYPES_MEDIA.includes(metaMap[k].mimeCategory));
-
-            if (basename === undefined)
-                return;
-
-            const meta = metaMap[basename];
-            const cat = meta.mimeCategory;
-            const src = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: album});
-
-            if (cat === "audio") {
-                img.src = buildURL(
-                    src, {[QUERY_THUMBNAIL]: "small"}
-                );
-            } else if (cat === "video") {
-                img.src = buildURL(
-                    src, {[QUERY_THUMBNAIL]: null}
-                );
-            } else {
-                img.src = src;
-            }
-        })();
+  function createAlbum(album) {
     
-        return container;
+    if(albumsList.classList.contains("empty"))
+      albumsList.classList.remove("empty");
 
-    }
-    function createVideo(basename) {
+    const container = createElement("div", "album-container");
+    const thumbnail = createElement("div", "album-thumbnail");
+    const img  = createElement("img");
+    const info = createElement("div", "album-info");
+    const name = createElement("div", "name");
+    const sub = createElement("div", "sub");
 
-        const thumbnail = createElement("img", "thumbnail");
-        const src = buildURL(
-            [URL_VIEW, basename],
-            {[QUERY_ALBUM]: gAlbum}
+    name.textContent = album;
+    sub.textContent = "-";
+
+    thumbnail.appendChild(img);
+
+    info.appendChild(name);
+    info.appendChild(sub);
+
+    container.appendChild(thumbnail);
+    container.appendChild(info);
+
+    container.addEventListener("click", () => {
+      changeAlbum(album);
+    });
+
+    container.update = () => {};
+    //container.remove
+
+    (async () => {
+      const url = buildURL(URL_LIST, {[QUERY_ALBUM]: album, [QUERY_CACHE]: null});
+      const response    = await fetch(url);
+      const { metaMap } = await response.json();
+
+      sub.textContent = formatAlbumInfo(metaMap);
+
+      const basename = Object.keys(metaMap)
+        .sort((a, b) => {
+          return new Date(metaMap[b].modTime) - new Date(metaMap[a].modTime);
+        })
+        .find((k) => TYPES_MEDIA.includes(splitMimeType(metaMap[k].mimeType)[0]));
+
+      if (basename === undefined)
+        return;
+
+      const meta = metaMap[basename];
+      const cat = splitMimeType(meta.mimeType)[0];
+      const src = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: album});
+
+      if (cat === "audio") {
+        img.src = buildURL(
+          src, {[QUERY_METADATA]: EXT_META_AUDIO_THUMB_SMALL}
         );
-        
-        thumbnail.src = PLACEHOLDER_IMAGE;
-        observeWithCallback(thumbnail, () => {
-            thumbnail.src = buildURL(
-                src, 
-                {[QUERY_THUMBNAIL]: null, [QUERY_ALBUM]: gAlbum}
-            );
-        });
+      } else if (cat === "video") {
+        img.src = buildURL(
+          src, {[QUERY_METADATA]: EXT_META_AUDIO_THUMB}
+        );
+      } else {
+        img.src = src;
+      }
+    })();
+  
+    return container;
 
-        let video;
-        thumbnail.addEventListener("click", async () => {
-            video = createElement("video", "media-body");
-            video.setAttribute("src", src); //+ "#t=0.001"); // #t=0.001 for safari thumbnail load hack
-            video.setAttribute("controls", "");
-            video.play();
-            
-            thumbnail.parentNode.insertBefore(video, thumbnail);
+  }
+  function createVideo(basename) {
 
-
-
-
-
-
-            const inputBlob = await fetch(src).then((res) => res.blob());
-            const h264Blob = await transcodeVideoToH264(inputBlob);
-            window.open(URL.createObjectURL(h264Blob), '_blank');
-
-
-
-        });
-
-        thumbnail.update = () => {};
-        //thumbnail.remove
-
-        return thumbnail;
-
-    }
-    function createImage(basename) {
-
-        const image = createElement("img", "media-body");
-        image.setAttribute("src", PLACEHOLDER_IMAGE);
-        
-        observeWithCallback(image, () => {
-            image.setAttribute("src", buildURL(
-                [URL_VIEW, basename],
-                {[QUERY_ALBUM]: gAlbum}
-            ));
-        });
-
-        image.update = () => {};
-        //image.remove
-
-        return image;
-        
-    }
-    function createAudio(basename) {
-        
-        const src = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: gAlbum});
-
-        // TODO gPlaylist.push(basename);
-
-        const container = createElement("div", "music-container");
-        const artContainer = createElement("div", "music-art-container");
-        const art = createElement("img", "music-art");
-
-        art.src = DEFAULT_ARTWORK;
-        observeWithCallback(art, async () => {
-            art.src = buildURL(src, {[QUERY_THUMBNAIL]: "small", [QUERY_ALBUM]: gAlbum});
-        });
-
-        artContainer.appendChild(art);
-        artContainer.addEventListener("click", () => {
-            changeMusic(basename);
-        });
-
-        const info = createElement("div", "music-info");
-        const title = createElement("div", "title");
-        const artist = createElement("div", "artist");
-
-        info.appendChild(title);
-        info.appendChild(artist);
-        container.appendChild(artContainer);
-        container.appendChild(info);
-
-        // Playlist
-        const li = createElement("li", "music-playlist-li");
-        const left = createElement("div", "left");
-        const leftBefore = createElement("div", "before");
-        const leftInfo = createElement("div", "info");
-        const listTitle = createElement("div", "title");
-        const listArtist = createElement("div", "artist");
-        const right = createElement("div", "right");
-
-        li.setAttribute("data-base", basename);
-
-        listTitle.textContent = basename;
-        listArtist.textContent = '-';
-
-        leftInfo.appendChild(listTitle);
-        leftInfo.appendChild(listArtist);
-        left.appendChild(leftBefore);
-        left.appendChild(leftInfo);
-
-        li.appendChild(left);
-        li.appendChild(right);
-
-        li.addEventListener("click", () => {
-            changeMusic(basename);
-        });
-        musicPlaylist.appendChild(li);
-
-        //
-        container.update = (meta) => {
-            const details = meta.details || {};
-
-            details.title = details.title || basename;
-            details.artist = details.artist || "-";
-
-            listTitle.textContent = details.title;
-            listArtist.textContent = details.artist;
-            title.textContent = details.title;
-            artist.textContent = details.artist;
-            right.textContent = formatDuration(details.duration);
-        };
-        const containerRemove = container.remove.bind(container);
-        container.remove = () => {
-            containerRemove();
-            li.remove();
-        };
-
-        return container;
-
-    }
+    const thumbnail = createElement("img", "thumbnail");
+    const src = buildURL(
+      [URL_VIEW, basename],
+      {[QUERY_ALBUM]: gAlbum}
+    );
     
-    function formatAlbumInfo(metaMap) {
-        
-        const totalSize = Object.values(metaMap).reduce((acc, v) => acc + v.size, 0);
-        const files     = Object.values(metaMap).filter(v => !v.isDir);
-        const numMedia  = files.filter(v => TYPES_MEDIA.includes(v.mimeCategory)).length;
-        const numOthers = files.length - numMedia;
+    thumbnail.src = PLACEHOLDER_IMAGE;
+    observeWithCallback(thumbnail, () => {
+      thumbnail.src = buildURL(
+        src, 
+        {[QUERY_METADATA]: EXT_META_VIDEO_THUMB, [QUERY_ALBUM]: gAlbum}
+      );
+    });
 
-        let totalInfo = formatBytes(totalSize) + " - ";
-        if (numOthers > 0) {
-            totalInfo += numOthers + " files, ";
-        }
-        totalInfo += numMedia + " media";
-        
-        return totalInfo;
+    let video;
+    thumbnail.addEventListener("click", async () => {
+      video = createElement("video", "media-body");
+      video.setAttribute("src", src); //+ "#t=0.001"); // #t=0.001 for safari thumbnail load hack
+      video.setAttribute("controls", "");
+      video.play();
+      
+      thumbnail.parentNode.insertBefore(video, thumbnail);
+    });
 
-    }
+    thumbnail.update = () => {};
+    //thumbnail.remove
 
-    const others = document.querySelector(".others-container");
-    const media = document.querySelector(".media-container");
+    return thumbnail;
 
-    async function cleanupList() {
-        Object.values(window.gEntryMap || {}).forEach(el => el.remove());
+  }
+  function createImage(basename) {
 
-        window.gMetadataBody = {};
-        window.gEntryMap = {};
+    const image = createElement("img", "media-body");
+    image.setAttribute("src", PLACEHOLDER_IMAGE);
+    
+    observeWithCallback(image, () => {
+      image.setAttribute("src", buildURL(
+        [URL_VIEW, basename],
+        {[QUERY_ALBUM]: gAlbum}
+      ));
+    });
 
-        albumsList.classList.add("empty");
-    }
+    image.update = () => {};
+    //image.remove
 
-    window.updateList = async function (metaBody1) {
+    return image;
+    
+  }
+  function createAudio(basename) {
+    
+    const src = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: gAlbum});
 
-        const metaMap1 = metaBody1.metaMap;
-        const metaMap0 = window.gMetadataBody.metaMap || {};
+    // TODO gPlaylist.push(basename);
 
-        window.gMetadataBody = metaBody1;
-        
-        const sortedKeys = Object.keys(metaMap1).sort((a, b) => {
-            return new Date(metaMap1[b].modTime) - new Date(metaMap1[a].modTime);
-        });
-        
-        for (const basename of sortedKeys) {
+    const container = createElement("div", "music-container");
+    const artContainer = createElement("div", "music-art-container");
+    const art = createElement("img", "music-art");
 
-            if (metaMap0[basename]) {
+    art.src = DEFAULT_ARTWORK;
+    observeWithCallback(art, async () => {
+      art.src = buildURL(src, {[QUERY_METADATA]: EXT_META_AUDIO_THUMB_SMALL, [QUERY_ALBUM]: gAlbum});
+    });
 
-                const object = window.gEntryMap[basename];
-                if (object) {
-                    object.update(metaMap1[basename]);
-                    //object.parentNode.appendChild(object);
-                }
-                    
-                delete metaMap0[basename];
+    artContainer.appendChild(art);
+    artContainer.addEventListener("click", () => {
+      changeMusic(basename);
+    });
 
-            } else {
+    const info = createElement("div", "music-info");
+    const title = createElement("div", "title");
+    const artist = createElement("div", "artist");
 
-                const meta = metaMap1[basename];
-                const typ = meta.mimeCategory; // MIME type's type part
-                const src = buildURL(
-                    [URL_VIEW, basename],
-                    {[QUERY_ALBUM]: gAlbum});
+    info.appendChild(title);
+    info.appendChild(artist);
+    container.appendChild(artContainer);
+    container.appendChild(info);
 
-                if(TYPES_MEDIA.includes(typ)) {
+    // Playlist
+    const li = createElement("li", "music-playlist-li");
+    const left = createElement("div", "left");
+    const leftBefore = createElement("div", "before");
+    const leftInfo = createElement("div", "info");
+    const listTitle = createElement("div", "title");
+    const listArtist = createElement("div", "artist");
+    const right = createElement("div", "right");
 
-                    const wrap = createElement("div", "media-wrap");
-                    const header = createElement("h4", "media-header");
-                    const h_a = createElement("a");
-                    h_a.innerHTML = basename;
-                    h_a.setAttribute("href", src);
-                    h_a.setAttribute("target", "_blank");
-                    header.appendChild(h_a);
-                    wrap.appendChild(header);
+    li.setAttribute("data-base", basename);
 
-                    const body_wrap = createElement("div", "media-body-wrap");
-                    let body;
+    listTitle.textContent = basename;
+    listArtist.textContent = '-';
 
-                    if(typ === "video") {
-                        body = createVideo(basename);
-                    } else if(typ === "image") {
-                        body = createImage(basename);
-                    } else {
-                        body = createAudio(basename);
-                    }
+    leftInfo.appendChild(listTitle);
+    leftInfo.appendChild(listArtist);
+    left.appendChild(leftBefore);
+    left.appendChild(leftInfo);
 
-                    body_wrap.appendChild(body);
+    li.appendChild(left);
+    li.appendChild(right);
 
-                    wrap.appendChild(body_wrap);
+    li.addEventListener("click", () => {
+      changeMusic(basename);
+    });
+    musicPlaylist.appendChild(li);
 
-                    wrap.update = (meta) => {
-                        body.update(meta);
-                        media.appendChild(wrap);
-                    };
-                    wrap.update(meta);
+    //
+    container.update = async (meta) => {
+      const txtMeta = buildURL(src, {[QUERY_METADATA]: EXT_META_TEXT});
+      const details = await (await fetch(txtMeta)).json() || {};
 
-                    const wrapRemove = wrap.remove.bind(wrap);
-                    wrap.remove = () => {
-                        body.remove();
-                        wrapRemove();
-                    };
+      details.title = details.title || basename;
+      details.artist = details.artist || "-";
 
-                    window.gEntryMap[basename] = wrap;
-
-                } else if (meta.isDir) {
-
-                    if (gAlbum === null) {
-                        const album = createAlbum(basename);
-
-                        album.update = () => {
-                            albumsList.insertBefore(album, albumsList.lastChild);
-                        };
-                        album.update();
-
-                        window.gEntryMap[basename] = album;
-                    }
-
-                } else {
-
-                    const wrap = createElement("div", "file-wrap");
-                    const anchor = createElement("a", "file-anchor");
-                    anchor.innerHTML = basename;
-                    anchor.setAttribute("href", src);
-                    anchor.setAttribute("target", "_blank");
-                    wrap.appendChild(anchor);
-                    others.appendChild(wrap);
-
-                    wrap.update = () => {
-                        others.appendChild(wrap);
-                    };
-                    window.gEntryMap[basename] = wrap;
-
-                }
-            }
-
-        }
-
-        // Removed
-        for (const key in metaMap0) {
-            const removed = window.gEntryMap[key];
-            if(removed)
-                removed.remove();
-        }
-
-    }
-
-    window.populateList = async function (cached=true) {
-
-        let url = buildURL(URL_LIST, {[QUERY_ALBUM]: gAlbum});
-        if (cached) {
-            url = buildURL(url, {[QUERY_CACHE]: null});
-        }
-
-        const response = await fetch(url);
-        const metaBody = await response.json();
-
-        await updateList(metaBody);
-
-        // TODO remove folder count from others
-        const numAudio = Object.values(metaBody.metaMap).filter(v => v.mimeCategory === "audio").length;
-        
-        totalSizeInfo.textContent = formatAlbumInfo(metaBody.metaMap);
-
-        // Adjust music player
-        musicPlayerContainer.classList[(numAudio > 0) ? "remove":"add"]("no-songs");
-
+      listTitle.textContent = details.title;
+      listArtist.textContent = details.artist;
+      title.textContent = details.title;
+      artist.textContent = details.artist;
+      right.textContent = formatDuration(details.duration);
     };
+    const containerRemove = container.remove.bind(container);
+    container.remove = () => {
+      containerRemove();
+      li.remove();
+    };
+
+    return container;
+
+  }
+  
+  function formatAlbumInfo(metaMap) {
+    
+    const totalSize = Object.values(metaMap).reduce((acc, v) => acc + v.size, 0);
+    const files     = Object.values(metaMap).filter(v => !v.isDir);
+    const numMedia  = files.filter(v => TYPES_MEDIA.includes(splitMimeType(v.mimeType)[0])).length;
+    const numOthers = files.length - numMedia;
+
+    let totalInfo = formatBytes(totalSize) + " - ";
+    if (numOthers > 0) {
+      totalInfo += numOthers + " files, ";
+    }
+    totalInfo += numMedia + " media";
+    
+    return totalInfo;
+
+  }
+
+  const others = document.querySelector(".others-container");
+  const media = document.querySelector(".media-container");
+
+  async function cleanupList() {
+    Object.values(window.gEntryMap || {}).forEach(el => el.remove());
+
+    window.gMetadataBody = {};
+    window.gEntryMap = {};
+
+    albumsList.classList.add("empty");
+  }
+
+  window.updateList = async function (metaBody1) {
+
+    const metaMap1 = metaBody1.metaMap;
+    const metaMap0 = window.gMetadataBody.metaMap || {};
+
+    window.gMetadataBody = metaBody1;
+    
+    const sortedKeys = Object.keys(metaMap1).sort((a, b) => {
+      return new Date(metaMap1[b].modTime) - new Date(metaMap1[a].modTime);
+    });
+    
+    for (const basename of sortedKeys) {
+
+      if (metaMap0[basename]) {
+
+        const object = window.gEntryMap[basename];
+        if (object) {
+          object.update(metaMap1[basename]);
+          //object.parentNode.appendChild(object);
+        }
+          
+        delete metaMap0[basename];
+
+      } else {
+
+        const meta = metaMap1[basename];
+        const typ = splitMimeType(meta.mimeType)[0]; // MIME type's type part
+        const src = buildURL(
+          [URL_VIEW, basename],
+          {[QUERY_ALBUM]: gAlbum});
+
+        if(TYPES_MEDIA.includes(typ)) {
+
+          const wrap = createElement("div", "media-wrap");
+          const header = createElement("h4", "media-header");
+          const h_a = createElement("a");
+          h_a.innerHTML = basename;
+          h_a.setAttribute("href", src);
+          h_a.setAttribute("target", "_blank");
+          header.appendChild(h_a);
+          wrap.appendChild(header);
+
+          const body_wrap = createElement("div", "media-body-wrap");
+          let body;
+
+          if(typ === "video") {
+            body = createVideo(basename);
+          } else if(typ === "image") {
+            body = createImage(basename);
+          } else {
+            body = createAudio(basename);
+          }
+
+          body_wrap.appendChild(body);
+
+          wrap.appendChild(body_wrap);
+
+          wrap.update = (meta) => {
+            body.update(meta);
+            media.appendChild(wrap);
+          };
+          wrap.update(meta);
+
+          const wrapRemove = wrap.remove.bind(wrap);
+          wrap.remove = () => {
+            body.remove();
+            wrapRemove();
+          };
+
+          window.gEntryMap[basename] = wrap;
+
+        } else if (meta.isDir) {
+
+          if (gAlbum === null) {
+            const album = createAlbum(basename);
+
+            album.update = () => {
+              albumsList.insertBefore(album, albumsList.lastChild);
+            };
+            album.update();
+
+            window.gEntryMap[basename] = album;
+          }
+
+        } else {
+
+          const wrap = createElement("div", "file-wrap");
+          const anchor = createElement("a", "file-anchor");
+          anchor.innerHTML = basename;
+          anchor.setAttribute("href", src);
+          anchor.setAttribute("target", "_blank");
+          wrap.appendChild(anchor);
+          others.appendChild(wrap);
+
+          wrap.update = () => {
+            others.appendChild(wrap);
+          };
+          window.gEntryMap[basename] = wrap;
+
+        }
+      }
+
+    }
+
+    // Removed
+    for (const key in metaMap0) {
+      const removed = window.gEntryMap[key];
+      if(removed)
+        removed.remove();
+    }
+
+  }
+
+  window.populateList = async function (cached=true) {
+
+    let url = buildURL(URL_LIST, {[QUERY_ALBUM]: gAlbum});
+    if (cached) {
+      url = buildURL(url, {[QUERY_CACHE]: null});
+    }
+
+    const response = await fetch(url);
+    const metaBody = await response.json();
+
+    await updateList(metaBody);
+
+    // TODO remove folder count from others
+    const numAudio = Object.values(metaBody.metaMap).filter(v => splitMimeType(v.mimeType)[0] === "audio").length;
+    
+    totalSizeInfo.textContent = formatAlbumInfo(metaBody.metaMap);
+
+    // Adjust music player
+    musicPlayerContainer.classList[(numAudio > 0) ? "remove":"add"]("no-songs");
+
+  };
 
 })();
 
 
 (() => {// Audio
 
-    const LC_AUDIO_JSON = "audioInfo";
+  const LC_AUDIO_JSON = "audioInfo";
 
-    window.musicPlaylist = document.querySelector(".music-playlist");
-    window.musicPlayerContainer = document.querySelector(".music-player-container");
-    const musicPlayer = document.querySelector(".music-player");
-    const musicPlayerArtContainer = musicPlayer.querySelector(".album-art-container");
-    const musicPlayerSeeker = musicPlayer.querySelector(".seeker");
-    const musicPlayerVolumeContainer = musicPlayer.querySelector(".volume-container");
-    const musicPlayerVolumeButton = musicPlayerVolumeContainer.querySelector(".button");
-    const musicPlayerVolumeSlider = musicPlayerVolumeContainer.querySelector(".slider");
-    const musicPlayerShuffleButton = musicPlayer.querySelector(".shuffle.button");
+  window.musicPlaylist = document.querySelector(".music-playlist");
+  window.musicPlayerContainer = document.querySelector(".music-player-container");
+  const musicPlayer = document.querySelector(".music-player");
+  const musicPlayerArtContainer = musicPlayer.querySelector(".album-art-container");
+  const musicPlayerSeeker = musicPlayer.querySelector(".seeker");
+  const musicPlayerVolumeContainer = musicPlayer.querySelector(".volume-container");
+  const musicPlayerVolumeButton = musicPlayerVolumeContainer.querySelector(".button");
+  const musicPlayerVolumeSlider = musicPlayerVolumeContainer.querySelector(".slider");
+  const musicPlayerShuffleButton = musicPlayer.querySelector(".shuffle.button");
 
-    const gAudio = document.querySelector(".music-player audio");
-    const gAudioSoundCheckDB = -17;
+  const gAudio = document.querySelector(".music-player audio");
+  const gAudioSoundCheckDB = -17;
 
-    window.gPlaylist = [];
-    window.gAudioCurrentBase = null;
-    let gAudioSeed = null;
-    let gMutablePlaylist = null;
+  window.gPlaylist = [];
+  window.gAudioCurrentBase = null;
+  let gAudioSeed = null;
+  let gMutablePlaylist = null;
 
-    let audioRetryHandle;
+  let audioRetryHandle;
 
-    const mediaActionHandlers = {
-        play: async () => {
-            if (gAudioCurrentBase == null) {
-                await changeMusic(gPlaylist[0]);
-                return;
-            }
-            await gAudio.play();
-            musicPlayer.classList.add("playing");
+  const mediaActionHandlers = {
+    play: async () => {
+      if (gAudioCurrentBase == null) {
+        await changeMusic(gPlaylist[0]);
+        return;
+      }
+      await gAudio.play();
+      musicPlayer.classList.add("playing");
 
-            navigator.mediaSession.playbackState = "playing";
+      navigator.mediaSession.playbackState = "playing";
 
-            // Save audio info for later restore
-            storeAudioInfo();
-        },
-        pause: async () => {
-            gAudio.pause();
-            musicPlayer.classList.remove("playing");
+      // Save audio info for later restore
+      storeAudioInfo();
+    },
+    pause: async () => {
+      gAudio.pause();
+      musicPlayer.classList.remove("playing");
 
-            navigator.mediaSession.playbackState = "paused";
-        },
-        stop: null,
-        seekbackward: null,
-        seekforward: null,
-        seekto: (details) => {
-            if (details.seekTime) {
-                gAudio.currentTime = details.seekTime;
-            }
-            updateMediaSessionPosition();
-        },
-        nexttrack: async () => {
-            const playlist = gMutablePlaylist;
-            const index = playlist.indexOf(gAudioCurrentBase);
-            const nextIndex = (index + 1) % playlist.length;
-            await changeMusic(playlist[nextIndex]);
-        },
-        previoustrack: async () => {
-            if (gAudio.currentTime > 3.0) {
-                gAudio.currentTime = 0;
-                await mediaActionHandlers['play']();
-            } else {
-                const playlist = gMutablePlaylist;
-                const index = playlist.indexOf(gAudioCurrentBase);
-                const prevIndex = (index - 1 + playlist.length) % playlist.length;
-                await changeMusic(playlist[prevIndex]);
-            }
-        },
+      navigator.mediaSession.playbackState = "paused";
+    },
+    stop: null,
+    seekbackward: null,
+    seekforward: null,
+    seekto: (details) => {
+      if (details.seekTime) {
+        gAudio.currentTime = details.seekTime;
+      }
+      updateMediaSessionPosition();
+    },
+    nexttrack: async () => {
+      const playlist = gMutablePlaylist;
+      const index = playlist.indexOf(gAudioCurrentBase);
+      const nextIndex = (index + 1) % playlist.length;
+      await changeMusic(playlist[nextIndex]);
+    },
+    previoustrack: async () => {
+      if (gAudio.currentTime > 3.0) {
+        gAudio.currentTime = 0;
+        await mediaActionHandlers['play']();
+      } else {
+        const playlist = gMutablePlaylist;
+        const index = playlist.indexOf(gAudioCurrentBase);
+        const prevIndex = (index - 1 + playlist.length) % playlist.length;
+        await changeMusic(playlist[prevIndex]);
+      }
+    },
+  };
+
+  window.addEventListener("DOMContentLoaded", () => {
+    cleanupAudio();
+  });
+  window.cleanupAudio = async function() {
+    musicPlaylist.classList.remove("edit");
+    musicPlaylist.scrollTo({ top: 0 });
+    changeMusic(null);
+  }
+  function storeAudioInfo() {
+    const audioInfo = JSON.parse(localStorage.getItem(LC_AUDIO_JSON) || "{}");
+    audioInfo[gAlbum] = { 
+      base: gAudioCurrentBase,
+      seed: gAudioSeed
+    };
+    localStorage.setItem(LC_AUDIO_JSON, JSON.stringify(audioInfo));
+  }
+  window.initializeAudio = async function() {
+
+    window.gPlaylist = gMetadataBody.playlist;
+
+    // Create a map of elements for quick lookup
+    const elementMap = new Map();
+    for (const li of musicPlaylist.querySelectorAll(".music-playlist-li")) {
+      elementMap.set(li.getAttribute("data-base"), li);
+    }
+
+    // Reorder elements in one pass
+    for (const base of gPlaylist) {
+      const li = elementMap.get(base);
+      if (li) {
+        musicPlaylist.appendChild(li);
+      }
+    }
+
+    // TODO when paused, file upload causes focusing of current music
+    // Restore session
+    if (gAudio.paused) {
+      const audioInfoJson = localStorage.getItem(LC_AUDIO_JSON);
+      if (audioInfoJson) {
+        const audioInfo = JSON.parse(audioInfoJson);
+        const albumAudioInfo = audioInfo[gAlbum];
+        if (albumAudioInfo) {
+          gAudioSeed = albumAudioInfo.seed || null;
+          gMutablePlaylist = shuffleArray(gPlaylist, gAudioSeed);
+
+          if (gPlaylist.indexOf(albumAudioInfo.base) !== -1) {
+            await changeMusic(albumAudioInfo.base);
+            await mediaActionHandlers["pause"]();
+          }
+        }
+      }
+    }
+
+    //
+    musicPlayerShuffleButton.classList[gAudioSeed !== null ? "add" : "remove"]("on");
+  }
+  
+  // MUSIC PLAYER
+  musicPlayerArtContainer.addEventListener("click", () => {
+    ensureLiVisibility(musicPlaylist, musicPlaylist.querySelector("li.playing"));
+  });
+  musicPlayerVolumeButton.addEventListener("click", () => {
+    musicPlayerVolumeSlider.style.display = "";
+  });
+  musicPlayerShuffleButton.addEventListener("click", () => {
+    if (musicPlayerShuffleButton.classList.contains("on")) {
+      gAudioSeed = null;
+      musicPlayerShuffleButton.classList.remove("on");
+    } else {
+      gAudioSeed = Math.floor(Date.now());
+      musicPlayerShuffleButton.classList.add("on");
+    }
+    gMutablePlaylist = shuffleArray(gPlaylist, gAudioSeed);
+
+    storeAudioInfo();
+  });
+  document.addEventListener('click', (event) => {
+    if (!musicPlayerVolumeContainer.contains(event.target)) {
+      musicPlayerVolumeSlider.style.display = "none";
+    }
+  });
+  
+  window.changeMusic = async function (base) {
+    
+    if (base === null) {
+      gAudioCurrentBase = null;
+      
+      await mediaActionHandlers["pause"]();
+      gAudio.removeAttribute("src");
+
+      if ('mediaSession' in navigator)
+        navigator.mediaSession.metadata = null;
+      
+      musicPlayerArtContainer.querySelectorAll("img").forEach(img => img.removeAttribute("src"));
+      updateMusicArtBackground();
+
+      return;
+    }
+
+    gAudioCurrentBase = base;
+    const src     = buildURL([URL_VIEW, base], {[QUERY_ALBUM]: gAlbum});
+    const thumb   = buildURL(src, {[QUERY_METADATA]: EXT_META_AUDIO_THUMB});
+    const txtMeta = buildURL(src, {[QUERY_METADATA]: EXT_META_TEXT});
+    
+    // DOMs
+    if (musicPlaylist.classList.contains("edit")) {
+      musicPlaylist.classList.remove("edit");
+      ensureLiVisibility(mainWrap, musicPlaylist);
+    }
+
+    const li0 = musicPlaylist.querySelector(".playing");
+    if (li0) li0.classList.remove("playing");
+
+    const li1 = musicPlaylist.querySelector(`li[data-base="${base}"]`);
+    li1.classList.add("playing");
+    ensureLiVisibility(musicPlaylist, li1);
+
+    //
+    await mediaActionHandlers["pause"]();
+    
+    const details = await (await fetch(txtMeta)).json() || {};
+    if (details.title === "") {
+      details.title = base;
+    }
+    updateMediaSessionMetadata(details.title, details.artist, details.album, thumb);
+
+    // Create blob and play
+    clearInterval(audioRetryHandle);
+    audioRetryHandle = createRetryInterval(async () => {
+
+      musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
+      updateMusicArtBackground();
+
+      gAudio.src = await normalizeAndBlobAudio(src, gAudioSoundCheckDB);
+
+    }, 5000);
+
+    try {
+      await audioRetryHandle.promise;
+      await mediaActionHandlers["play"]();
+      updateMediaSessionPosition();
+    } catch(err) {
+      console.error("Failed to play", src, err);
+      return;
+    }
+
+  }
+
+  gAudio.addEventListener("ended", () => {
+    // Revoke old blob
+    const oldSrc = gAudio.src;
+    if (false && oldSrc && oldSrc.startsWith("blob:")) {
+      URL.revokeObjectURL(oldSrc);
+    }
+    mediaActionHandlers["nexttrack"]();
+  });
+  gAudio.addEventListener('playing', setupMediaSessionControls);
+
+  createSlider(musicPlayerVolumeSlider, 0.5, true, volume => {
+    gAudio.volume = volume;
+  }, (updater) => {
+    gAudio.addEventListener("volumechange", () => {
+      updater(gAudio.volume);
+    });
+  });
+  createSlider(musicPlayerSeeker, 0.0, false, frac => {
+    if(!gAudio.duration) {
+      return;
+    }
+    gAudio.currentTime = gAudio.duration * frac;
+  }, (updater) => {
+    gAudio.addEventListener("timeupdate", () => {
+      updater(gAudio.currentTime / gAudio.duration);
+    });
+  });
+
+  const gAudioPrevButton = document.querySelector(".music-player .prev");
+  const gAudioNextButton = document.querySelector(".music-player .next");
+  const gAudioPlayPauseButton = document.querySelector(".music-player .play-pause");
+  gAudioPrevButton.addEventListener("click", mediaActionHandlers["previoustrack"]);
+  gAudioNextButton.addEventListener("click", mediaActionHandlers["nexttrack"]);
+  gAudioPlayPauseButton.addEventListener("click", async () => {
+    if(gAudio.paused) {
+      await mediaActionHandlers["play"]();
+    } else {
+      mediaActionHandlers["pause"]();
+    }
+  });
+
+  function updateMediaSessionPosition() {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.setPositionState({
+        duration: gAudio.duration || 0,
+        playbackRate: gAudio.playbackRate,
+        position: gAudio.currentTime
+      });
+    }
+  }
+  function updateMusicArtBackground() {
+
+    // Fill the background of blurred album art so that it looks more natural than just gray
+    
+    const img = musicPlayerArtContainer.querySelector('.cover');
+    const canvas = musicPlayerArtContainer.querySelector('.cover-bg');
+
+    if (img.src === "") {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+
+    img.onload = () => {
+      // Match canvas size to the blurred image
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+
+      // Get canvas context
+      const ctx = canvas.getContext('2d');
+
+      // Draw blurred image onto canvas to calculate the average color
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      // Get pixel data
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const pixels = imageData.data;
+
+      let totalR = 0, totalG = 0, totalB = 0;
+      const totalPixels = pixels.length / 4;
+
+      // Calculate average color
+      for (let i = 0; i < pixels.length; i += 4) {
+        totalR += pixels[i];     // Red
+        totalG += pixels[i + 1]; // Green
+        totalB += pixels[i + 2]; // Blue
+      }
+
+      const avgR = Math.round(totalR / totalPixels);
+      const avgG = Math.round(totalG / totalPixels);
+      const avgB = Math.round(totalB / totalPixels);
+
+      // Fill canvas with the average color
+      ctx.fillStyle = `rgb(${avgR}, ${avgG}, ${avgB})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
     };
 
-    window.addEventListener("DOMContentLoaded", () => {
-        cleanupAudio();
+  }
+  function updateMediaSessionMetadata(title, artist, album, artworkUrl) {
+    if ('mediaSession' in navigator) {
+
+      // Prevent video from interrupting media session metadata
+      document.querySelectorAll('video').forEach(element => element.remove());
+
+      let artwork = [
+        {src: artworkUrl, sizes: "96x96", type: "image/jpg",},
+        {src: artworkUrl, sizes: "128x128", type: "image/jpg",},
+        {src: artworkUrl, sizes: "192x192", type: "image/jpg",},
+        {src: artworkUrl, sizes: "256x256", type: "image/jpg",},
+        {src: artworkUrl, sizes: "384x384", type: "image/jpg",},
+        {src: artworkUrl, sizes: "512x512", type: "image/jpg",},
+      ];
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: title,
+        artist: artist,
+        album: album,
+        artwork: artwork,
+      });
+    }
+  }
+
+  // MediaSession API handlers
+  async function setupMediaSessionControls() {
+    if ('mediaSession' in navigator) {
+      for (const [action, handler] of Object.entries(mediaActionHandlers)) {
+        navigator.mediaSession.setActionHandler(action, handler);
+      }
+    }
+  }
+
+  // Playlist editing
+  {
+    let targetLi;
+    let draggedWrap;
+    let dragPoint;
+    let dragPointerId;
+    let candidateLi;
+    const INTERVAL = 10; // interval for tracking pointermove event
+
+    // Function to handle the long press event
+    let longpressHandle;
+    let longpressStart;
+    const longpressDuration = 750;
+    let startLis;
+    function handleLongPress(event) {
+
+      endScroll();
+
+      musicPlaylist.querySelectorAll(".edit-target").forEach(el => el.classList.remove("edit-target"));
+
+      targetLi = event.target.closest('.music-playlist-li');
+      if (targetLi) {
+
+        dragPointerId = event.pointerId;
+
+        //
+        startLis = musicPlaylist.querySelectorAll('.music-playlist-li');
+
+        const liRect = targetLi.getBoundingClientRect();
+
+        dragPoint = {};
+        dragPoint.x = event.clientX - liRect.left;
+        dragPoint.y = event.clientY - liRect.top;
+
+        //
+        targetLi.classList.add("edit-target");
+
+        if (draggedWrap) draggedWrap.remove();
+
+        const draggedLi = createElement("li", "music-playlist-li", "dragged");
+        draggedLi.innerHTML = targetLi.innerHTML;
+
+        draggedWrap = createElement("div", "music-playlist-li-drag-wrap");
+        draggedWrap.style.width = `${liRect.width}px`;
+
+        draggedWrap.appendChild(draggedLi);
+        mainWrap.appendChild(draggedWrap);
+
+        handleDragMove(event);
+
+        // Add scroll y to compensate
+        musicPlaylist.classList.add("edit");
+        const liRect2 = targetLi.getBoundingClientRect();
+        mainWrap.scrollTo({ top: mainWrap.scrollTop+liRect2.top-event.clientY+dragPoint.y });
+      }
+    }
+
+    const swapLi = throttle(100, (target, candiate) => {
+
+      if (target === candiate) return;
+
+      const targetNext = target.nextSibling;
+
+      for(const each of startLis) {
+        if (each === candiate) {
+          if (candiate === targetNext) {
+            musicPlaylist.appendChild(candiate);
+            musicPlaylist.appendChild(target);
+          } else {
+            musicPlaylist.appendChild(target);
+            musicPlaylist.appendChild(candiate);
+          }
+        }
+        else if (each === target) {
+          
+        }
+        else {
+          musicPlaylist.appendChild(each);
+        }
+      }
+
     });
-    window.cleanupAudio = async function() {
+
+    function handleDragMove(event, touch) {
+
+      if (!draggedWrap) return;
+      if (dragPointerId !== event.pointerId) return;
+
+      event.preventDefault(); // Prevent scrolling during drag
+
+      draggedWrap.style.left = `${event.clientX - dragPoint.x}px`;
+      draggedWrap.style.top = `${event.clientY - dragPoint.y + 5}px`;
+
+      candidateLi = getClosestLi(event.clientY);
+
+      swapLi(targetLi, candidateLi);
+
+    }
+
+    function getClosestLi(clientY) {
+      const items = startLis; // Get all items in the container
+      let closest = null;
+      let minDistance = Infinity;
+
+      items.forEach((item) => {
+
+        const rect = item.getBoundingClientRect();
+        const itemCenterY = rect.top + dragPoint.y;
+
+        // Calculate the distance from the drag position to the item's center
+        const distance = Math.abs(itemCenterY - clientY);
+
+        if (distance < minDistance) {
+          minDistance = distance;
+          closest = item;
+        }
+      });
+
+      return closest; // Return the closest <div>
+    }
+
+    // Throttle the editing api call
+    const editPlaylist = debounce(5000, () => {
+            
+      const url = buildURL("/editPlaylist", {[QUERY_ALBUM]: gAlbum});
+      fetch(url, {
+        method: 'POST',
+        body: JSON.stringify(gPlaylist), 
+      })
+        .catch(error => console.error('Edit playlist error:', error));
+      
+    });
+
+    function handleDragEnd(event) {
+
+      if (!draggedWrap) return;
+      if (!candidateLi) return;
+      if (dragPointerId !== event.pointerId) return;
+
+      //musicPlaylist.classList.remove("edit");
+      draggedWrap.remove();
+      draggedWrap = null;
+
+      musicPlaylist.insertBefore(targetLi, candidateLi);
+
+      //ensureLiVisibility(musicPlaylist, targetLi);
+      setTimeout(() => targetLi.classList.remove("edit-target"), 100);
+
+      // Rearrange in gPlaylist
+      window.gPlaylist = Array.from(
+        musicPlaylist.querySelectorAll(".music-playlist-li"))
+        .map(el => el.getAttribute("data-base"));
+
+      // Send edit
+      editPlaylist();
+
+    }
+
+    musicPlaylist.addEventListener("click", event => {
+      return;
+      if (draggedWrap) return;
+
+      const targetLi = event.target.closest('.music-playlist-li');
+
+      // When user plays music, exit the edit mode and ensure visibility
+      if (targetLi) {
         musicPlaylist.classList.remove("edit");
-        musicPlaylist.scrollTo({ top: 0 });
-        changeMusic(null);
-    }
-    function storeAudioInfo() {
-        const audioInfo = JSON.parse(localStorage.getItem(LC_AUDIO_JSON) || "{}");
-        audioInfo[gAlbum] = { 
-            base: gAudioCurrentBase,
-            seed: gAudioSeed
-        };
-        localStorage.setItem(LC_AUDIO_JSON, JSON.stringify(audioInfo));
-    }
-    window.initializeAudio = async function() {
-
-        window.gPlaylist = gMetadataBody.playlist;
-
-        // Create a map of elements for quick lookup
-        const elementMap = new Map();
-        for (const li of musicPlaylist.querySelectorAll(".music-playlist-li")) {
-            elementMap.set(li.getAttribute("data-base"), li);
-        }
-
-        // Reorder elements in one pass
-        for (const base of gPlaylist) {
-            const li = elementMap.get(base);
-            if (li) {
-                musicPlaylist.appendChild(li);
-            }
-        }
-
-        // TODO when paused, file upload causes focusing of current music
-        // Restore session
-        if (gAudio.paused) {
-            const audioInfoJson = localStorage.getItem(LC_AUDIO_JSON);
-            if (audioInfoJson) {
-                const audioInfo = JSON.parse(audioInfoJson);
-                const albumAudioInfo = audioInfo[gAlbum];
-                if (albumAudioInfo) {
-                    gAudioSeed = albumAudioInfo.seed || null;
-                    gMutablePlaylist = shuffleArray(gPlaylist, gAudioSeed);
-
-                    if (gPlaylist.indexOf(albumAudioInfo.base) !== -1) {
-                        await changeMusic(albumAudioInfo.base);
-                        await mediaActionHandlers["pause"]();
-                    }
-                }
-            }
-        }
-
-        //
-        musicPlayerShuffleButton.classList[gAudioSeed !== null ? "add" : "remove"]("on");
-    }
-    
-    // MUSIC PLAYER
-    musicPlayerArtContainer.addEventListener("click", () => {
-        ensureLiVisibility(musicPlaylist, musicPlaylist.querySelector("li.playing"));
+        ensureLiVisibility(musicPlaylist, targetLi);
+        ensureLiVisibility(mainWrap, musicPlaylist);
+      }
     });
-    musicPlayerVolumeButton.addEventListener("click", () => {
-        musicPlayerVolumeSlider.style.display = "";
+
+    // Event listeners for mouse and touch
+    /* musicPlaylist.addEventListener('mousedown', (event) => {
+      longpressHandle = setTimeout(() => handleLongPress(event), longpressDuration);
     });
-    musicPlayerShuffleButton.addEventListener("click", () => {
-        if (musicPlayerShuffleButton.classList.contains("on")) {
-            gAudioSeed = null;
-            musicPlayerShuffleButton.classList.remove("on");
+
+    document.addEventListener('mouseleave', () => clearTimeout(longpressHandle));
+    document.addEventListener('mousemove', throttle(50, handleDragMove));
+
+    document.addEventListener('mouseup', () => {
+      clearTimeout(longpressHandle);
+      handleDragEnd();
+    });*/
+
+    let clickedLi;
+    let clickedTime;
+    let clickStart = {};
+    let touching = false;
+    let touchmoveLastY = {};
+    let scrollSpeed = {};
+    let borderHandler;
+    let scrollHandle; // interval handle
+    const scrollDecelerate = Math.pow(0.96, 1/(10/INTERVAL));
+    const scrollThreshold = 1.5;
+
+    function endScroll() {
+      scrollSpeed = {};
+      clearInterval(scrollHandle);
+      scrollHandle = null;
+    }
+
+    function startScroll() {
+      if (scrollHandle) return;
+      scrollHandle = setInterval(() => {
+
+        let vals = Object.values(scrollSpeed);
+        if (vals.length == 0) return;
+
+        const sum = vals.reduce((acc, val) => acc + val, 0);
+        
+        if (sum === 0) endScroll();
+
+        if (musicPlaylist.clientHeight < musicPlaylist.scrollHeight) {
+          musicPlaylist.scrollTo({ top: musicPlaylist.scrollTop + sum });
         } else {
-            gAudioSeed = Math.floor(Date.now());
-            musicPlayerShuffleButton.classList.add("on");
+          mainWrap.scrollTo({ top: mainWrap.scrollTop + sum });
         }
-        gMutablePlaylist = shuffleArray(gPlaylist, gAudioSeed);
+        
+        // Decelerate
+        for (const key in scrollSpeed)
+          scrollSpeed[key] *= Math.abs(sum) < scrollThreshold ? 0 : scrollDecelerate;
 
-        storeAudioInfo();
-    });
-    document.addEventListener('click', (event) => {
-        if (!musicPlayerVolumeContainer.contains(event.target)) {
-            musicPlayerVolumeSlider.style.display = "none";
+      }, INTERVAL);
+    }
+
+    musicPlaylist.addEventListener('touchstart', (event) => {
+      touching = true;
+
+      event.preventDefault(); // Prevent default long-press behavior
+                  // Without this iOS will handle the scroll on its own
+
+      const newTouch = event.changedTouches[0]; // Get the new touch
+      const allTouches = event.touches; // Get all active touches
+
+      // Find the index in the full touch list
+      const index = Array.from(allTouches).findIndex(touch => touch.identifier === newTouch.identifier);
+
+      // Manual handling of click on li elements
+      clickedLi = event.target.closest('.music-playlist-li');
+      clickedTime = Date.now();
+      clickStart.clientX = event.touches[index].clientX;
+      clickStart.clientY = event.touches[index].clientY;
+
+      // Scroll interval for executing scrollTo
+      startScroll();
+
+      // Border handler
+      // handling when dragging of li reaches the border of screen
+      clearInterval(borderHandler);
+      borderHandler = setInterval(() => {
+
+        if (!draggedWrap) return;
+        if (touchmoveLastY[dragPointerId] === undefined) return;
+
+        const margin = 200;
+        const scrollStep = 225;
+        // Scroll up when near the top
+        if (touchmoveLastY[dragPointerId] < margin) {
+          mainWrap.scrollBy({ top: -scrollStep, behavior: 'smooth' });
         }
+        // Scroll down when near the bottom
+        else if (touchmoveLastY[dragPointerId] > mainWrap.clientHeight - margin) {
+          mainWrap.scrollBy({ top: scrollStep, behavior: 'smooth' });
+        }
+      
+      }, 1000);
+
     });
+    document.addEventListener('touchend', (event) => {
+      //
+      if (event.touches.length === 0) {
+        touching = false;
+        touchmoveLastY = {};
+        clearInterval(borderHandler);
+      }
+    });
+
+    musicPlaylist.addEventListener('pointerdown', (event) => {
+
+      if (draggedWrap) return;
+
+      longpressStart = {
+        clientX: event.clientX,
+        clientY: event.clientY
+      };
+
+      // When it is already in edit mode, use the right side to move it immediately
+      if (musicPlaylist.classList.contains("edit") && event.target.closest(".right"))
+        handleLongPress(event);
+      else
+        longpressHandle = setTimeout(() => handleLongPress(event), longpressDuration);
+    });
+
+    const touchend = (event) => {
+
+      // Manual clicking
+      if (touching && !draggedWrap && clickedLi && (Date.now() - clickedTime < longpressDuration)) {
+        if (Math.abs(clickStart.clientX - event.clientX) < 5 &&
+          Math.abs(clickStart.clientY - event.clientY) < 5) {
+          clickedLi.click();
+        }
+      }
+      clickedLi = null;
+
+      clearTimeout(longpressHandle);
+
+      handleDragEnd(event);
     
-    window.changeMusic = async function (base) {
-        
-        if (base === null) {
-            gAudioCurrentBase = null;
-            
-            await mediaActionHandlers["pause"]();
-            gAudio.removeAttribute("src");
+    };
+    let touchmove = throttle(INTERVAL, (event) => {
 
-            if ('mediaSession' in navigator)
-                navigator.mediaSession.metadata = null;
-            
-            musicPlayerArtContainer.querySelectorAll("img").forEach(img => img.removeAttribute("src"));
-            updateMusicArtBackground();
+      // Manual handling of scroll
+      if (touching
+        && event.pointerId !== dragPointerId
+        && touchmoveLastY[event.pointerId] !== undefined) {
 
-            return;
+        const delta = touchmoveLastY[event.pointerId]-event.clientY;
+        scrollSpeed[event.pointerId] = delta;
+
+        startScroll();
+
+      }
+
+      touchmoveLastY[event.pointerId] = event.clientY;
+
+      if (longpressStart) {
+        if (Math.abs(longpressStart.clientX - event.clientX) > 5 ||
+          Math.abs(longpressStart.clientY - event.clientY) > 5) {
+          clearTimeout(longpressHandle);
         }
+      }
 
-        gAudioCurrentBase = base;
-        const src   = buildURL([URL_VIEW, base], {[QUERY_ALBUM]: gAlbum});
-        const thumb = buildURL(src, {[QUERY_THUMBNAIL]: null});
-        
-        // DOMs
-        if (musicPlaylist.classList.contains("edit")) {
-            musicPlaylist.classList.remove("edit");
-            ensureLiVisibility(mainWrap, musicPlaylist);
-        }
+      handleDragMove(event, touching);
 
-        const li0 = musicPlaylist.querySelector(".playing");
-        if (li0) li0.classList.remove("playing");
-
-        const li1 = musicPlaylist.querySelector(`li[data-base="${base}"]`);
-        li1.classList.add("playing");
-        ensureLiVisibility(musicPlaylist, li1);
-
-        //
-        await mediaActionHandlers["pause"]();
-        
-        const { details } = gMetadataBody.metaMap[base];
-        if (details.title === "") {
-            details.title = base;
-        }
-        updateMediaSessionMetadata(details.title, details.artist, details.album, thumb);
-
-        // Create blob and play
-        clearInterval(audioRetryHandle);
-        audioRetryHandle = createRetryInterval(async () => {
-
-            musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
-            updateMusicArtBackground();
-
-            gAudio.src = await normalizeAndBlobAudio(src, gAudioSoundCheckDB);
-
-        }, 5000);
-
-        try {
-            await audioRetryHandle.promise;
-            await mediaActionHandlers["play"]();
-            updateMediaSessionPosition();
-        } catch(err) {
-            console.error("Failed to play", src, err);
-            return;
-        }
-
-    }
-
-    gAudio.addEventListener("ended", () => {
-        // Revoke old blob
-        const oldSrc = gAudio.src;
-        if (false && oldSrc && oldSrc.startsWith("blob:")) {
-            URL.revokeObjectURL(oldSrc);
-        }
-        mediaActionHandlers["nexttrack"]();
     });
-    gAudio.addEventListener('playing', setupMediaSessionControls);
-
-    createSlider(musicPlayerVolumeSlider, 0.5, true, volume => {
-        gAudio.volume = volume;
-    }, (updater) => {
-        gAudio.addEventListener("volumechange", () => {
-            updater(gAudio.volume);
-        });
-    });
-    createSlider(musicPlayerSeeker, 0.0, false, frac => {
-        if(!gAudio.duration) {
-            return;
-        }
-        gAudio.currentTime = gAudio.duration * frac;
-    }, (updater) => {
-        gAudio.addEventListener("timeupdate", () => {
-            updater(gAudio.currentTime / gAudio.duration);
-        });
-    });
-
-    const gAudioPrevButton = document.querySelector(".music-player .prev");
-    const gAudioNextButton = document.querySelector(".music-player .next");
-    const gAudioPlayPauseButton = document.querySelector(".music-player .play-pause");
-    gAudioPrevButton.addEventListener("click", mediaActionHandlers["previoustrack"]);
-    gAudioNextButton.addEventListener("click", mediaActionHandlers["nexttrack"]);
-    gAudioPlayPauseButton.addEventListener("click", async () => {
-        if(gAudio.paused) {
-            await mediaActionHandlers["play"]();
-        } else {
-            mediaActionHandlers["pause"]();
-        }
-    });
-
-    function updateMediaSessionPosition() {
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.setPositionState({
-                duration: gAudio.duration || 0,
-                playbackRate: gAudio.playbackRate,
-                position: gAudio.currentTime
-            });
-        }
-    }
-    function updateMusicArtBackground() {
-
-        // Fill the background of blurred album art so that it looks more natural than just gray
-        
-        const img = musicPlayerArtContainer.querySelector('.cover');
-        const canvas = musicPlayerArtContainer.querySelector('.cover-bg');
-
-        if (img.src === "") {
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            return;
-        }
-
-        img.onload = () => {
-            // Match canvas size to the blurred image
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-
-            // Get canvas context
-            const ctx = canvas.getContext('2d');
-
-            // Draw blurred image onto canvas to calculate the average color
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-            // Get pixel data
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const pixels = imageData.data;
-
-            let totalR = 0, totalG = 0, totalB = 0;
-            const totalPixels = pixels.length / 4;
-
-            // Calculate average color
-            for (let i = 0; i < pixels.length; i += 4) {
-                totalR += pixels[i];     // Red
-                totalG += pixels[i + 1]; // Green
-                totalB += pixels[i + 2]; // Blue
-            }
-
-            const avgR = Math.round(totalR / totalPixels);
-            const avgG = Math.round(totalG / totalPixels);
-            const avgB = Math.round(totalB / totalPixels);
-
-            // Fill canvas with the average color
-            ctx.fillStyle = `rgb(${avgR}, ${avgG}, ${avgB})`;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-        };
-
-    }
-    function updateMediaSessionMetadata(title, artist, album, artworkUrl) {
-        if ('mediaSession' in navigator) {
-
-            // Prevent video from interrupting media session metadata
-            document.querySelectorAll('video').forEach(element => element.remove());
-
-            let artwork = [
-                {src: artworkUrl, sizes: "96x96", type: "image/jpg",},
-                {src: artworkUrl, sizes: "128x128", type: "image/jpg",},
-                {src: artworkUrl, sizes: "192x192", type: "image/jpg",},
-                {src: artworkUrl, sizes: "256x256", type: "image/jpg",},
-                {src: artworkUrl, sizes: "384x384", type: "image/jpg",},
-                {src: artworkUrl, sizes: "512x512", type: "image/jpg",},
-            ];
-
-            navigator.mediaSession.metadata = new MediaMetadata({
-                title: title,
-                artist: artist,
-                album: album,
-                artwork: artwork,
-            });
-        }
-    }
-
-    // MediaSession API handlers
-    async function setupMediaSessionControls() {
-        if ('mediaSession' in navigator) {
-            for (const [action, handler] of Object.entries(mediaActionHandlers)) {
-                navigator.mediaSession.setActionHandler(action, handler);
-            }
-        }
-    }
-
-    // Playlist editing
-    {
-        let targetLi;
-        let draggedWrap;
-        let dragPoint;
-        let dragPointerId;
-        let candidateLi;
-        const INTERVAL = 10; // interval for tracking pointermove event
-
-        // Function to handle the long press event
-        let longpressHandle;
-        let longpressStart;
-        const longpressDuration = 750;
-        let startLis;
-        function handleLongPress(event) {
-
-            endScroll();
-
-            musicPlaylist.querySelectorAll(".edit-target").forEach(el => el.classList.remove("edit-target"));
-
-            targetLi = event.target.closest('.music-playlist-li');
-            if (targetLi) {
-
-                dragPointerId = event.pointerId;
-
-                //
-                startLis = musicPlaylist.querySelectorAll('.music-playlist-li');
-
-                const liRect = targetLi.getBoundingClientRect();
-
-                dragPoint = {};
-                dragPoint.x = event.clientX - liRect.left;
-                dragPoint.y = event.clientY - liRect.top;
-
-                //
-                targetLi.classList.add("edit-target");
-
-                if (draggedWrap) draggedWrap.remove();
-
-                const draggedLi = createElement("li", "music-playlist-li", "dragged");
-                draggedLi.innerHTML = targetLi.innerHTML;
-
-                draggedWrap = createElement("div", "music-playlist-li-drag-wrap");
-                draggedWrap.style.width = `${liRect.width}px`;
-
-                draggedWrap.appendChild(draggedLi);
-                mainWrap.appendChild(draggedWrap);
-
-                handleDragMove(event);
-
-                // Add scroll y to compensate
-                musicPlaylist.classList.add("edit");
-                const liRect2 = targetLi.getBoundingClientRect();
-                mainWrap.scrollTo({ top: mainWrap.scrollTop+liRect2.top-event.clientY+dragPoint.y });
-            }
-        }
-
-        const swapLi = throttle(100, (target, candiate) => {
-
-            if (target === candiate) return;
-
-            const targetNext = target.nextSibling;
-
-            for(const each of startLis) {
-                if (each === candiate) {
-                    if (candiate === targetNext) {
-                        musicPlaylist.appendChild(candiate);
-                        musicPlaylist.appendChild(target);
-                    } else {
-                        musicPlaylist.appendChild(target);
-                        musicPlaylist.appendChild(candiate);
-                    }
-                }
-                else if (each === target) {
-                    
-                }
-                else {
-                    musicPlaylist.appendChild(each);
-                }
-            }
-
-        });
-
-        function handleDragMove(event, touch) {
-
-            if (!draggedWrap) return;
-            if (dragPointerId !== event.pointerId) return;
-
-            event.preventDefault(); // Prevent scrolling during drag
-
-            draggedWrap.style.left = `${event.clientX - dragPoint.x}px`;
-            draggedWrap.style.top = `${event.clientY - dragPoint.y + 5}px`;
-
-            candidateLi = getClosestLi(event.clientY);
-
-            swapLi(targetLi, candidateLi);
-
-        }
-
-        function getClosestLi(clientY) {
-            const items = startLis; // Get all items in the container
-            let closest = null;
-            let minDistance = Infinity;
-
-            items.forEach((item) => {
-
-                const rect = item.getBoundingClientRect();
-                const itemCenterY = rect.top + dragPoint.y;
-
-                // Calculate the distance from the drag position to the item's center
-                const distance = Math.abs(itemCenterY - clientY);
-
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    closest = item;
-                }
-            });
-
-            return closest; // Return the closest <div>
-        }
-
-        // Throttle the editing api call
-        const editPlaylist = debounce(5000, () => {
-                        
-            const url = buildURL("/editPlaylist", {[QUERY_ALBUM]: gAlbum});
-            fetch(url, {
-                method: 'POST',
-                body: JSON.stringify(gPlaylist), 
-            })
-                .catch(error => console.error('Edit playlist error:', error));
-            
-        });
-
-        function handleDragEnd(event) {
-
-            if (!draggedWrap) return;
-            if (!candidateLi) return;
-            if (dragPointerId !== event.pointerId) return;
-
-            //musicPlaylist.classList.remove("edit");
-            draggedWrap.remove();
-            draggedWrap = null;
-
-            musicPlaylist.insertBefore(targetLi, candidateLi);
-
-            //ensureLiVisibility(musicPlaylist, targetLi);
-            setTimeout(() => targetLi.classList.remove("edit-target"), 100);
-
-            // Rearrange in gPlaylist
-            window.gPlaylist = Array.from(
-                musicPlaylist.querySelectorAll(".music-playlist-li"))
-                .map(el => el.getAttribute("data-base"));
-
-            // Send edit
-            editPlaylist();
-
-        }
-
-        musicPlaylist.addEventListener("click", event => {
-            return;
-            if (draggedWrap) return;
-
-            const targetLi = event.target.closest('.music-playlist-li');
-
-            // When user plays music, exit the edit mode and ensure visibility
-            if (targetLi) {
-                musicPlaylist.classList.remove("edit");
-                ensureLiVisibility(musicPlaylist, targetLi);
-                ensureLiVisibility(mainWrap, musicPlaylist);
-            }
-        });
-
-        // Event listeners for mouse and touch
-        /* musicPlaylist.addEventListener('mousedown', (event) => {
-            longpressHandle = setTimeout(() => handleLongPress(event), longpressDuration);
-        });
-
-        document.addEventListener('mouseleave', () => clearTimeout(longpressHandle));
-        document.addEventListener('mousemove', throttle(50, handleDragMove));
-
-        document.addEventListener('mouseup', () => {
-            clearTimeout(longpressHandle);
-            handleDragEnd();
-        });*/
-
-        let clickedLi;
-        let clickedTime;
-        let clickStart = {};
-        let touching = false;
-        let touchmoveLastY = {};
-        let scrollSpeed = {};
-        let borderHandler;
-        let scrollHandle; // interval handle
-        const scrollDecelerate = Math.pow(0.96, 1/(10/INTERVAL));
-        const scrollThreshold = 1.5;
-
-        function endScroll() {
-            scrollSpeed = {};
-            clearInterval(scrollHandle);
-            scrollHandle = null;
-        }
-
-        function startScroll() {
-            if (scrollHandle) return;
-            scrollHandle = setInterval(() => {
-
-                let vals = Object.values(scrollSpeed);
-                if (vals.length == 0) return;
-
-                const sum = vals.reduce((acc, val) => acc + val, 0);
-                
-                if (sum === 0) endScroll();
-
-                if (musicPlaylist.clientHeight < musicPlaylist.scrollHeight) {
-                    musicPlaylist.scrollTo({ top: musicPlaylist.scrollTop + sum });
-                } else {
-                    mainWrap.scrollTo({ top: mainWrap.scrollTop + sum });
-                }
-                
-                // Decelerate
-                for (const key in scrollSpeed)
-                    scrollSpeed[key] *= Math.abs(sum) < scrollThreshold ? 0 : scrollDecelerate;
-
-            }, INTERVAL);
-        }
-
-        musicPlaylist.addEventListener('touchstart', (event) => {
-            touching = true;
-
-            event.preventDefault(); // Prevent default long-press behavior
-                                    // Without this iOS will handle the scroll on its own
-
-            const newTouch = event.changedTouches[0]; // Get the new touch
-            const allTouches = event.touches; // Get all active touches
-
-            // Find the index in the full touch list
-            const index = Array.from(allTouches).findIndex(touch => touch.identifier === newTouch.identifier);
-
-            // Manual handling of click on li elements
-            clickedLi = event.target.closest('.music-playlist-li');
-            clickedTime = Date.now();
-            clickStart.clientX = event.touches[index].clientX;
-            clickStart.clientY = event.touches[index].clientY;
-
-            // Scroll interval for executing scrollTo
-            startScroll();
-
-            // Border handler
-            // handling when dragging of li reaches the border of screen
-            clearInterval(borderHandler);
-            borderHandler = setInterval(() => {
-
-                if (!draggedWrap) return;
-                if (touchmoveLastY[dragPointerId] === undefined) return;
-
-                const margin = 200;
-                const scrollStep = 225;
-                // Scroll up when near the top
-                if (touchmoveLastY[dragPointerId] < margin) {
-                    mainWrap.scrollBy({ top: -scrollStep, behavior: 'smooth' });
-                }
-                // Scroll down when near the bottom
-                else if (touchmoveLastY[dragPointerId] > mainWrap.clientHeight - margin) {
-                    mainWrap.scrollBy({ top: scrollStep, behavior: 'smooth' });
-                }
-            
-            }, 1000);
-
-        });
-        document.addEventListener('touchend', (event) => {
-            //
-            if (event.touches.length === 0) {
-                touching = false;
-                touchmoveLastY = {};
-                clearInterval(borderHandler);
-            }
-        });
-
-        musicPlaylist.addEventListener('pointerdown', (event) => {
-
-            if (draggedWrap) return;
-
-            longpressStart = {
-                clientX: event.clientX,
-                clientY: event.clientY
-            };
-
-            // When it is already in edit mode, use the right side to move it immediately
-            if (musicPlaylist.classList.contains("edit") && event.target.closest(".right"))
-                handleLongPress(event);
-            else
-                longpressHandle = setTimeout(() => handleLongPress(event), longpressDuration);
-        });
-
-        const touchend = (event) => {
-
-            // Manual clicking
-            if (touching && !draggedWrap && clickedLi && (Date.now() - clickedTime < longpressDuration)) {
-                if (Math.abs(clickStart.clientX - event.clientX) < 5 &&
-                    Math.abs(clickStart.clientY - event.clientY) < 5) {
-                    clickedLi.click();
-                }
-            }
-            clickedLi = null;
-
-            clearTimeout(longpressHandle);
-
-            handleDragEnd(event);
-        
-        };
-        let touchmove = throttle(INTERVAL, (event) => {
-
-            // Manual handling of scroll
-            if (touching
-                && event.pointerId !== dragPointerId
-                && touchmoveLastY[event.pointerId] !== undefined) {
-
-                const delta = touchmoveLastY[event.pointerId]-event.clientY;
-                scrollSpeed[event.pointerId] = delta;
-
-                startScroll();
-
-            }
-
-            touchmoveLastY[event.pointerId] = event.clientY;
-
-            if (longpressStart) {
-                if (Math.abs(longpressStart.clientX - event.clientX) > 5 ||
-                    Math.abs(longpressStart.clientY - event.clientY) > 5) {
-                    clearTimeout(longpressHandle);
-                }
-            }
-
-            handleDragMove(event, touching);
-
-        });
-        document.addEventListener('pointermove', touchmove);
-        document.addEventListener('pointerup', touchend);
-        document.addEventListener('pointercancel', touchend);
-
-    }
-    
+    document.addEventListener('pointermove', touchmove);
+    document.addEventListener('pointerup', touchend);
+    document.addEventListener('pointercancel', touchend);
+
+  }
+  
 })();
 
 
 (() => { // UPLOAD
-    const upload_input = document.getElementById("upload-input");
-    const uploadInfoContainer = document.querySelector(".upload-info-container");
-    const uploadInfoFilename = document.querySelector(".upload-info-container .file-name");
-    const uploadInfoFileno = document.querySelector(".upload-info-container .file-no");
-    const uploadInfoProgress = document.querySelector(".upload-info-container .progress-bar");
-    const uploadInfoSpeed = document.querySelector(".upload-info-container .speed");
-    const uploadInfoTime = document.querySelector(".upload-info-container .time");
-    window.upload_processed = false;
+  const upload_input = document.getElementById("upload-input");
+  const uploadInfoContainer = document.querySelector(".upload-info-container");
+  const uploadInfoFilename = document.querySelector(".upload-info-container .file-name");
+  const uploadInfoFileno = document.querySelector(".upload-info-container .file-no");
+  const uploadInfoProgress = document.querySelector(".upload-info-container .progress-bar");
+  const uploadInfoSpeed = document.querySelector(".upload-info-container .speed");
+  const uploadInfoTime = document.querySelector(".upload-info-container .time");
+  window.upload_processed = false;
 
-    function setUploadProgress(percent) {
-        uploadInfoProgress.style.width = percent + "%";
+  function setUploadProgress(percent) {
+    uploadInfoProgress.style.width = percent + "%";
+  }
+
+  upload_input.addEventListener("change", function() {
+    if(upload_processed) return;
+    if(this.files.length == 0) return;
+
+    uploadFiles([...this.files]);
+  }, false);
+
+  window.uploadFiles = async function (files) {
+
+    mainWrap.scrollTo({ top: 0, behavior: 'smooth' });
+
+    upload_processed = true;
+    uploadInfoContainer.classList.remove("error");
+    uploadInfoContainer.style.display = '';
+
+    const start = Date.now();
+    let totalSize = 0;
+    let totalUploaded = 0;
+    for (const file of files) {
+      totalSize += file.size;
     }
 
-    upload_input.addEventListener("change", function() {
-        if(upload_processed) return;
-        if(this.files.length == 0) return;
+    try {
 
-        uploadFiles([...this.files]);
-    }, false);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        uploadInfoFilename.textContent = file.name;
+        uploadInfoFileno.textContent = (i+1) + " of " + files.length;
+        setUploadProgress(0);
 
-    window.uploadFiles = async function (files) {
+        await uploadSingleFile(file, (delta) => {
 
-        mainWrap.scrollTo({ top: 0, behavior: 'smooth' });
+          totalUploaded += delta;
 
-        upload_processed = true;
-        uploadInfoContainer.classList.remove("error");
-        uploadInfoContainer.style.display = '';
+          if(totalUploaded > 0) {
 
-        const start = Date.now();
-        let totalSize = 0;
-        let totalUploaded = 0;
-        for (const file of files) {
-            totalSize += file.size;
-        }
+            const elapsed = (Date.now() - start) / 1000;
+            const speed = totalUploaded / elapsed;
+            uploadInfoSpeed.textContent = formatBytes(speed) + "/s";
 
-        try {
+            const left = Math.max(1, Math.floor((elapsed/totalUploaded) * (totalSize - totalUploaded)));
 
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                uploadInfoFilename.textContent = file.name;
-                uploadInfoFileno.textContent = (i+1) + " of " + files.length;
-                setUploadProgress(0);
+            const mins = Math.floor(left / 60);
+            const secs = left % 60;
+            uploadInfoTime.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 
-                const arrayBuffer = await file.arrayBuffer(); // Read the file as an ArrayBuffer
-                const hashHex = CRC32.buf(new Uint8Array(arrayBuffer)) >>> 0;
-
-                    await uploadSingleFile(file, hashHex, (delta) => {
-
-                        totalUploaded += delta;
-
-                        if(totalUploaded > 0) {
-
-                            const elapsed = (Date.now() - start) / 1000;
-                            const speed = totalUploaded / elapsed;
-                            uploadInfoSpeed.textContent = formatBytes(speed) + "/s";
-
-                            const left = Math.max(1, Math.floor((elapsed/totalUploaded) * (totalSize - totalUploaded)));
-
-                            const mins = Math.floor(left / 60);
-                            const secs = left % 60;
-                            uploadInfoTime.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-
-                        } else {
-                            uploadInfoSpeed.textContent = "0 B/s";
-                            uploadInfoTime.textContent = "-";
-                        }
-
-                    });
-            
-            }
-
-            //uploadInfoContainer.style.display = 'none';
-            uploadInfoSpeed.textContent = formatBytes(totalUploaded) + " uploaded";
+          } else {
+            uploadInfoSpeed.textContent = "0 B/s";
             uploadInfoTime.textContent = "-";
+          }
 
-        } catch(error) {
-
-            checkServer();
-            uploadInfoContainer.classList.add("error");
-            uploadInfoSpeed.textContent = error.message;
-            return;
-
-        }
-
-        upload_processed = false;
-        await populateList(false);
-        await initializeAudio();
-
-    }
-
-    function uploadSingleFile(file, hashHex, ondelta) {
-
-        return new Promise((resolve, reject) => {
-            // Create FormData
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('hashHex', hashHex);
-
-            // Fake endpoint - replace with your actual server upload URL
-            const uploadUrl = buildURL("/upload", {[QUERY_ALBUM]: gAlbum});
-
-            // Setup XHR
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', uploadUrl, true);
-
-            // Track upload progress
-            let lastLoaded = 0;
-            xhr.upload.onprogress = (event) => {
-                if (event.lengthComputable) {
-                    const percent = Math.floor((event.loaded / event.total) * 100);
-                    setUploadProgress(percent);
-
-                    // Send delta back
-                    ondelta(event.loaded - lastLoaded);
-                    lastLoaded = event.loaded;
-                }
-            };
-
-            // On load (finished)
-            xhr.onload = () => {
-                if (xhr.status === 200) {
-                    // File uploaded successfully
-                    resolve();
-                } else {
-                    // Handle error
-                    reject(new Error(xhr.status + ": " + xhr.response));
-                }
-                checkServer();
-            };
-
-            // On error
-            xhr.onerror = () => {
-                reject(new Error('Network error'));
-            };
-
-            // Send the file
-            xhr.send(formData);
         });
+      
+      }
+
+      //uploadInfoContainer.style.display = 'none';
+      uploadInfoSpeed.textContent = formatBytes(totalUploaded) + " uploaded";
+      uploadInfoTime.textContent = "-";
+
+    } catch(error) {
+
+      checkServer();
+      uploadInfoContainer.classList.add("error");
+      uploadInfoSpeed.textContent = error.message;
+      return;
+
     }
+
+    upload_processed = false;
+    await populateList(false);
+    await initializeAudio();
+
+  }
+
+  async function uploadSingleFile(file, ondelta) {
+    
+    const arrayBuffer = await file.arrayBuffer(); // Read the file as an ArrayBuffer
+    const crc = await hashwasm.crc32(new Uint8Array(arrayBuffer));
+
+    console.log(0, crc);
+
+    return new Promise(async (resolve, reject) => {
+      // Create FormData
+      const formData = new FormData();
+      formData.append('base', file.name);
+      formData.append('crc', crc);
+      formData.append('file', file);
+
+      console.log(1);
+      // Check for sub metadata
+      const metaBlobMap = await ffmpegAttemptMetadata(file.name, new Uint8Array(arrayBuffer));
+      for (let ext in metaBlobMap) {
+        formData.append(`metadata:${ext}`, metaBlobMap[ext]);
+      }
+      console.log(2);
+
+      // Fake endpoint - replace with your actual server upload URL
+      const uploadUrl = buildURL("/upload", {[QUERY_ALBUM]: gAlbum});
+
+      // Setup XHR
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', uploadUrl, true);
+
+      // Track upload progress
+      let lastLoaded = 0;
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.floor((event.loaded / event.total) * 100);
+          setUploadProgress(percent);
+
+          // Send delta back
+          ondelta(event.loaded - lastLoaded);
+          lastLoaded = event.loaded;
+        }
+      };
+
+      // On load (finished)
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          // File uploaded successfully
+          resolve();
+        } else {
+          // Handle error
+          reject(new Error(xhr.status + ": " + xhr.response));
+        }
+        checkServer();
+      };
+
+      // On error
+      xhr.onerror = () => {
+        reject(new Error('Network error'));
+      };
+
+      // Send the file
+      xhr.send(formData);
+    });
+  }
 })();
 
 
 (() => { // DRAG HANDLING
-        
-    // Helper states
-    const dragIndicator = document.querySelector(".drag-indicator");
-    let dragCounter = 0; // track how many "dragenter" events
-    let dragStartedInternal = false; // to feign knowing it came from inside
-                                    // simply leaving and reentering would make it seem from outside
+    
+  // Helper states
+  const dragIndicator = document.querySelector(".drag-indicator");
+  let dragCounter = 0; // track how many "dragenter" events
+  let dragStartedInternal = false; // to feign knowing it came from inside
+                  // simply leaving and reentering would make it seem from outside
 
-    function isDragFromOutside(event) {
-        
-        for (const item of event.dataTransfer.items) {
-            if (item.type === "text/uri-list") {
-                const url = event.dataTransfer.getData(item.type);
-                try {
-                    // Parse the URL to extract its origin
-                    const parsedUrl = new URL(url);
-                    if (parsedUrl.origin === window.location.origin)
-                        return false;
-                } catch (error) {
-                    console.log(`Invalid URL: ${url}`);
-                }
-            }
+  function isDragFromOutside(event) {
+    
+    for (const item of event.dataTransfer.items) {
+      if (item.type === "text/uri-list") {
+        const url = event.dataTransfer.getData(item.type);
+        try {
+          // Parse the URL to extract its origin
+          const parsedUrl = new URL(url);
+          if (parsedUrl.origin === window.location.origin)
+            return false;
+        } catch (error) {
+          console.log(`Invalid URL: ${url}`);
         }
-
-        return true;
-
+      }
     }
 
-    function handleDragStart(event) {
-        dragStartedInternal = true;
+    return true;
+
+  }
+
+  function handleDragStart(event) {
+    dragStartedInternal = true;
+  }
+
+  function handleDragEnter(event) {
+    if(upload_processed) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    dragCounter++;
+
+    if (dragStartedInternal) return;
+
+    /* dragstart and drop has access to drop info
+    if (isDragFromOutside(event) === false)
+      return;
+    */
+
+    dragIndicator.style.display = '';
+  }
+
+  function handleDragOver(event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function handleDragLeave(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    dragCounter--;
+
+    // If we are not in a nested drag area, hide the overlay
+    if (dragCounter === 0) {
+      dragIndicator.style.display = 'none';
+      dragStartedInternal = false;
     }
+  }
 
-    function handleDragEnter(event) {
-        if(upload_processed) return;
+  function handleDrop(event) {
+    if(upload_processed) return;
 
-        event.preventDefault();
-        event.stopPropagation();
+    event.preventDefault();
+    event.stopPropagation();
+    dragCounter = 0;
+    dragStartedInternal = false;
 
-        dragCounter++;
+    // Hide the overlay
+    dragIndicator.style.display = 'none';
 
-        if (dragStartedInternal) return;
+    const files = event.dataTransfer.files;
+    if (files.length === 0) return;
 
-        /* dragstart and drop has access to drop info
-        if (isDragFromOutside(event) === false)
-            return;
-        */
+    if (isDragFromOutside(event) === false)
+      return;
 
-        dragIndicator.style.display = '';
-    }
+    // Upload each file in series or parallel (example: in series for clarity)
+    uploadFiles([...files]);
+  }
 
-    function handleDragOver(event) {
-        event.preventDefault();
-        event.stopPropagation();
-    }
-
-    function handleDragLeave(event) {
-        event.preventDefault();
-        event.stopPropagation();
-        dragCounter--;
-
-        // If we are not in a nested drag area, hide the overlay
-        if (dragCounter === 0) {
-            dragIndicator.style.display = 'none';
-            dragStartedInternal = false;
-        }
-    }
-
-    function handleDrop(event) {
-        if(upload_processed) return;
-
-        event.preventDefault();
-        event.stopPropagation();
-        dragCounter = 0;
-        dragStartedInternal = false;
-
-        // Hide the overlay
-        dragIndicator.style.display = 'none';
-
-        const files = event.dataTransfer.files;
-        if (files.length === 0) return;
-
-        if (isDragFromOutside(event) === false)
-            return;
-
-        // Upload each file in series or parallel (example: in series for clarity)
-        uploadFiles([...files]);
-    }
-
-    // Set up document-level event listeners for drag and drop
-    document.addEventListener('dragstart', handleDragStart);
-    document.addEventListener('dragenter', handleDragEnter);
-    document.addEventListener('dragover', handleDragOver);
-    document.addEventListener('dragleave', handleDragLeave);
-    document.addEventListener('drop', handleDrop);
+  // Set up document-level event listeners for drag and drop
+  document.addEventListener('dragstart', handleDragStart);
+  document.addEventListener('dragenter', handleDragEnter);
+  document.addEventListener('dragover', handleDragOver);
+  document.addEventListener('dragleave', handleDragLeave);
+  document.addEventListener('drop', handleDrop);
 
 })();
 
 (() => { // SERVER STATUS
-    const serverInfoContainer = document.querySelector(".server-info-container");
-    const memstats = serverInfoContainer.querySelector(".memstats");
-    const checkServerInterval = 5 * 60 * 1000;
-    let checkServerHandle;
-    window.checkServer = throttle(2000.0, async function () {
+  const serverInfoContainer = document.querySelector(".server-info-container");
+  const memstats = serverInfoContainer.querySelector(".memstats");
+  const checkServerInterval = 5 * 60 * 1000;
+  let checkServerHandle;
+  window.checkServer = throttle(2000.0, async function () {
 
-        fetch('/ping') // prevent recursive
-            .then(response => {
-                serverInfoContainer.classList.remove("error");
-                gDEBUG = response.headers.has("X-Debug");
-            })
-            .catch(err => {
-                serverInfoContainer.classList.add("error");
-            });
+    fetch('/ping') // prevent recursive
+      .then(response => {
+        serverInfoContainer.classList.remove("error");
+        gDEBUG = response.headers.has("X-Debug");
+      })
+      .catch(err => {
+        serverInfoContainer.classList.add("error");
+      });
 
-    });
-    checkServerHandle = setInterval(checkServer, checkServerInterval);
+  });
+  checkServerHandle = setInterval(checkServer, checkServerInterval);
 
-    document.addEventListener("play", checkServer, true);
-    document.addEventListener("load", checkServer, true);
+  document.addEventListener("play", checkServer, true);
+  document.addEventListener("load", checkServer, true);
 
-    //
-    window.totalSizeInfo = document.querySelector(".total-size-info");
+  //
+  window.totalSizeInfo = document.querySelector(".total-size-info");
 
-    function processPerformanceHeader(performanceHeader) {
+  function processPerformanceHeader(performanceHeader) {
 
-        if (!performanceHeader) return;
+    if (!performanceHeader) return;
 
-        try {
-            // Parse the performance JSON
-            const performanceData = JSON.parse(performanceHeader);
-            
-            memstats.textContent = `
-                CR: ${performanceData.concurrentRequests}/${performanceData.peakConcurrentRequests}, 
-                MA: ${formatBytes(performanceData.memAlloc)}/${formatBytes(performanceData.peakMemAlloc)},
-                PRS: ${formatSeconds(performanceData.peakNanosecondsPerRequest)}
-            `;
-        } catch (error) {
-            console.error("Error parsing X-Performance header:", error);
-        }
+    try {
+      // Parse the performance JSON
+      const performanceData = JSON.parse(performanceHeader);
+      
+      memstats.textContent = `
+        CR: ${performanceData.concurrentRequests}/${performanceData.peakConcurrentRequests}, 
+        MA: ${formatBytes(performanceData.memAlloc)}/${formatBytes(performanceData.peakMemAlloc)},
+        PRS: ${formatSeconds(performanceData.peakNanosecondsPerRequest)}
+      `;
+    } catch (error) {
+      console.error("Error parsing X-Performance header:", error);
     }
+  }
 
-    //
-    window.originalFetch = window.fetch;
-    window.fetch = async function (input, init) {
-        try {
-            const response = await originalFetch(input, init);
-            processPerformanceHeader(response.headers.get('X-Performance'));
+  //
+  window.originalFetch = window.fetch;
+  window.fetch = async function (input, init) {
+    try {
+      const response = await originalFetch(input, init);
+      processPerformanceHeader(response.headers.get('X-Performance'));
 
-            return response;
-        } catch (error) {
-            throw error; // Re-throw the error so fetch behaves as expected
-        }
-    };
+      return response;
+    } catch (error) {
+      throw error; // Re-throw the error so fetch behaves as expected
+    }
+  };
 })();
 
 (() => { // Utility functions that aren't independant
 
-    const originalConsoleError = console.error;
-    console.error = function (...args) {
-        args = args.map(arg => {
-            if (arg instanceof Error) {
-                return `${arg.stack || "No stack"} - ${arg.message}`;
-            }
-            return arg;
-        });
-        originalConsoleError.call(console, ...args);
-        if (gDEBUG) {
-            fetch("/ping", {
-                method: "POST",
-                headers: {"X-Debug": "error"},
-                body: JSON.stringify(args)
-            })
-        }
-    };
-    const originalConsoleLog = console.log;
-    console.log = function (...args) {
-        originalConsoleLog.call(console, ...args);
-        if (gDEBUG) {
-            fetch("/ping", {
-                method: "POST",
-                body: JSON.stringify(args.map(String))
-            })
-        }
-    };
+  const originalConsoleError = console.error;
+  console.error = function (...args) {
+    args = args.map(arg => {
+      if (arg instanceof Error) {
+        return `${arg.stack || "No stack"} - ${arg.message}`;
+      }
+      return arg;
+    });
+    originalConsoleError.call(console, ...args);
+    if (gDEBUG) {
+      fetch("/ping", {
+        method: "POST",
+        headers: {"X-Debug": "error"},
+        body: JSON.stringify(args)
+      })
+    }
+  };
+  const originalConsoleLog = console.log;
+  console.log = function (...args) {
+    originalConsoleLog.call(console, ...args);
+    if (gDEBUG) {
+      fetch("/ping", {
+        method: "POST",
+        body: JSON.stringify(args.map(String))
+      })
+    }
+  };
 
 })();
 
-    </script>
+  </script>
 </html>

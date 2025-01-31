@@ -189,13 +189,14 @@ func logHTTPRequest(r *http.Request, status int, items ...interface{}) {
 
 func recursiveNewName(dir string, fn string) string {
 	ext := filepath.Ext(fn)
-	base := filepath.Base(fn)
+	stem := filepath.Base(fn)
+	stem = stem[:len(stem)-len(ext)]
 	fn1 := fn
 
 	for i := 0; i < 5; i++ {
 
 		if i > 0 {
-			fn1 = fmt.Sprintf("%s-%d%s", base, i+1, ext)
+			fn1 = fmt.Sprintf("%s-%d%s", stem, i+1, ext)
 		}
 		// TODO
 		if _, err := os.Stat(filepath.Join(dir, fn1)); err == nil {
@@ -207,7 +208,7 @@ func recursiveNewName(dir string, fn string) string {
 		}
 
 	}
-	return fmt.Sprintf("%s-%d%s", base, time.Now().Unix(), ext)
+	return fmt.Sprintf("%s-%d%s", stem, time.Now().Unix(), ext)
 }
 
 

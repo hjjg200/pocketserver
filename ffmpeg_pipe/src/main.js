@@ -14,6 +14,47 @@ import { fetchFile } from '@ffmpeg/util';
 */
 
 
+
+window.ffmpegRunCommands = async function (name, inputAry, cmds) {
+
+  const ffmpeg = await newFFmpeg();
+
+  // Clone array and write
+  const inputFileName = `input${guessExtension(name)}`;
+  await ffmpeg.writeFile(inputFileName, new Uint8Array(inputAry));
+
+  const ret = {};
+  for (let cmd of cmds) {
+
+    const exec = cmd.args[0] === "ffmpeg" ? ffmpeg.exec : ffmpeg.ffprobe;
+
+    let args = cmd.args.slice();
+    args[cmd.input] = inputFileName;
+    args[cmd.output] = "output" + cmd.outputExt;
+    
+    await exec(args.slice(1));
+  
+    ret[cmd.outputExt] = new Blob([await ffmpeg.readFile(args[cmd.output])], { type: cmd.outputMimeType });
+
+    if (cmd.outputPost) {
+      try {
+        ret[cmd.outputExt] = await cmd.outputPost(ret[cmd.outputExt]);
+      } catch {
+        return {};
+      }
+    }
+
+  }
+  
+  return ret;
+
+}
+
+
+
+
+
+
 /**
  * newFFmpeg:
  *   Creates and loads the ffmpeg.wasm instance. Adjust the URLs to your environment.
@@ -38,30 +79,27 @@ async function newFFmpeg() {
 }
 
 /**
- * getDuration:
- *   Retrieves the duration of a file using ffprobe JSON output.
+ * getTextMetadata:
+ *   Retrieves the text metadata of a file using ffprobe JSON output.
  */
-async function getDuration(ffmpeg, inputFileName) {
+async function getTextMetadata(ffmpeg, inputFileName) {
   let stdout = "";
-  let stderr = "";
 
   const onLog = (evt) => {
     if (evt.type === "stdout") {
       stdout += evt.message + "\n";
-    } else if (evt.type === "stderr") {
-      stderr += evt.message + "\n";
     }
   };
 
   ffmpeg.on("log", onLog);
 
   // Run ffprobe in JSON mode
-  // NOTE: ffmpeg.wasm provides 'ffmpeg.ffprobe' in some builds. If not, you can emulate
-  // an ffprobe call with `-f ffprobe` or parse the console logs. Adjust as needed.
   await ffmpeg.ffprobe([
     "-i", inputFileName,
-    "-show_entries", "format=duration",
+    "-show_format",
+    "-show_entries", "format_tags=album,artist,title,comment:format=duration",
     "-print_format", "json",
+    "-v", "quiet",
   ]);
 
   ffmpeg.off("log", onLog);
@@ -73,12 +111,18 @@ async function getDuration(ffmpeg, inputFileName) {
     throw new Error("ffprobe JSON parsing failed: " + err.message);
   }
 
+  const tags = parseFloat(probeResult.format?.tags);
+  // tags.artist album comment title
+
   const duration = parseFloat(probeResult.format?.duration);
   if (isNaN(duration)) {
-    throw new Error("Failed to parse duration from ffprobe output.");
+    // Not an audio or video, maybe image(webp)
   }
-  return duration;
+
+  return probeResult;
 }
+
+
 
 /**
  * analyzeLoudnessPass1:
@@ -112,6 +156,8 @@ async function analyzeLoudnessPass1(ffmpeg, wavFileName, targetLUFS) {
     "-i", wavFileName,
     "-af", `loudnorm=I=${targetLUFS}:TP=-2.0:LRA=11:print_format=json`,
     "-f", "null",
+    "-threads", "1",
+    "-v", "info",
     "-",
   ]);
 
@@ -129,7 +175,7 @@ async function analyzeLoudnessPass1(ffmpeg, wavFileName, targetLUFS) {
  * correctLoudnessPass2:
  *   Pass 2 of loudnorm. Applies the measured stats from Pass 1 for a precise correction.
  */
-async function correctLoudnessPass2(ffmpeg, wavFileName, outputFileName, analysis, durationSeconds, targetLUFS) {
+async function correctLoudnessPass2(ffmpeg, wavFileName, outputFileName, analysis, targetLUFS) {
   if (
     typeof analysis.input_i === "undefined" ||
     typeof analysis.input_tp === "undefined" ||
@@ -157,10 +203,11 @@ async function correctLoudnessPass2(ffmpeg, wavFileName, outputFileName, analysi
   await ffmpeg.exec([
     "-i", wavFileName,
     "-af", pass2Filter,
-    "-t", String(durationSeconds),
     "-c:a", "aac",
+    "-c:v", "mjpeg",
     "-b:a", "128k",
     "-f", "ipod",
+    "-threads", "1",
     "-movflags", "+faststart",
     outputFileName,
   ]);
@@ -230,7 +277,6 @@ window.ffmpegSoundCheck = async (src, targetLUFS = -14) => {
   // 0) Download the file into memory
   const inputFile = await fetchFile(src);
   const inputFileName = `input${guessExtension(src)}`; // e.g. input.mp3, input.m4a, etc.
-  const wavFileName = "temp.wav";
   const tempCorrectedFile = "tempCorrected.m4a";
   const finalOutputFile = "finalOutput.m4a";
 
@@ -238,28 +284,16 @@ window.ffmpegSoundCheck = async (src, targetLUFS = -14) => {
   console.log("Writing input file to FS...");
   await ffmpeg.writeFile(inputFileName, inputFile);
 
-  // 1) Get input duration
-  console.log("Probing duration...");
-  const inputDuration = await getDuration(ffmpeg, inputFileName);
-  console.log("Input duration (seconds):", inputDuration.toFixed(3));
-
-  // 2) Convert input to WAV (PCM) for faster loudnorm pass
-  console.log("Converting to WAV...");
-  await ffmpeg.exec([
-    "-i", inputFileName,
-    "-c:a", "pcm_s16le",
-    "-ar", "48000",
-    wavFileName,
-  ]);
-
+  console.log(await getTextMetadata(ffmpeg, inputFileName));
+  
   // 3) Loudness Analysis (Pass 1)
   console.log("Analyzing loudness (pass 1)...");
-  const analysis = await analyzeLoudnessPass1(ffmpeg, wavFileName, targetLUFS);
+  const analysis = await analyzeLoudnessPass1(ffmpeg, inputFileName, targetLUFS);
   console.log("Pass 1 analysis:", analysis);
 
   // 4) Loudness Correction (Pass 2) -> tempCorrected.m4a (audio only, minimal metadata)
   console.log("Correcting loudness (pass 2)...");
-  await correctLoudnessPass2(ffmpeg, wavFileName, tempCorrectedFile, analysis, inputDuration, targetLUFS);
+  await correctLoudnessPass2(ffmpeg, inputFileName, tempCorrectedFile, analysis, targetLUFS);
 
   // 5) Merge original metadata + album art (re-encoded to MJPEG) into finalOutput.m4a
   console.log("Merging metadata & cover art...");
@@ -278,6 +312,84 @@ window.ffmpegSoundCheck = async (src, targetLUFS = -14) => {
 };
 
 
+window.ffmpegGetMetadata = async (buf, contentType) => {
+
+  const metadata = {};
+
+  // Check eligibility
+  const [ cat, sub ] = contentType.split("/");
+  if (false === (cat === "audio" || cat === "video" || sub === "webp"))
+    return metadata;
+
+  //
+  const ffmpeg = await newFFmpeg();
+
+  try {
+    
+    // 0) Download the file into memory
+    const inputFile = await fetchFile(new Blob([buf], {type: contentType}));
+    const inputFileName = `input${guessExtension(src)}`;
+
+    // Write the input file to the in-memory FS
+    await ffmpeg.writeFile(inputFileName, inputFile);
+
+    // Json
+    metadata[".json"] = await getTextMetadata(ffmpeg, inputFileName);
+    if (isNaN(metadata[".json"].duration)) {
+      // Indicate this webp is image
+      metadata[".json"].duration = "N/A";
+
+      return metadata;
+    }
+
+    // Thumbnail
+    const baseArgs = [
+      "-i", inputFileName,
+      "-c:v", "libwebp",
+      "-threads", "1",
+      "-q:v", "80",
+      "-pix_fmt", "yuv420p",
+      "-an"
+    ];
+
+    if (cat === "video") {
+
+      await ffmpeg.exec([
+        ...baseArgs,
+        "-ss", "00:00:01",
+        "-vframes", "1",
+        "thumb.webp"
+      ]);
+    
+      const thumb = await ffmpeg.readFile("thumb.webp");
+      metadata[".webp"] = new Blob([thumb.buffer], { type: "image/webp" });
+    
+    } else {
+      
+      await ffmpeg.exec([
+        ...baseArgs,
+        "thumb.webp"
+      ]);
+      await ffmpeg.exec([
+        ...baseArgs,
+        "-vf", "'scale=iw*sqrt(16384/(iw*ih)):-1'",
+        "small.webp"
+      ]);
+    
+      const thumb = await ffmpeg.readFile("thumb.webp");
+      const small = await ffmpeg.readFile("small.webp");
+      metadata[".webp"] = new Blob([thumb.buffer], { type: "image/webp" });
+      metadata["_small.webp"] = new Blob([small.buffer], { type: "image/webp" });
+      
+    }
+
+  } finally {
+    ffmpeg.terminate();
+  }
+
+  return metadata;
+
+}
 
 
 
@@ -627,3 +739,190 @@ function mergeChunks(chunks, totalSize) {
   }
   return out;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+(() => { // Segmented encoding PoC
+  /**
+   * Use the segment muxer to split into valid segments that each start at a keyframe.
+   * Return an array of { name, data } in memory.
+   */
+  async function segmentVideo(ffmpeg, inputName, segmentTime) {
+    // We'll produce segment_0.mp4, segment_1.mp4, etc.
+    // -f segment: use the segment muxer
+    // -segment_time: how many seconds each segment is
+    // -force_key_frames: ensures each segment starts on a keyframe
+    // -reset_timestamps 1: ensures each segment starts at t=0
+    const segPattern = "segment_%d.mp4";
+  
+    await ffmpeg.exec([
+      "-i", inputName,
+      "-c", "copy",
+      "-f", "segment",
+      "-segment_time", `${segmentTime}`,            // e.g. 10 seconds per segment
+      "-reset_timestamps", "1",
+      "-force_key_frames", `expr:gte(t,n_forced*${segmentTime})`,
+      "-threads", "1",
+      segPattern,
+    ]);
+  
+    // The tricky part: we need to figure out how many segments got created
+    // We can do that by checking the FS for files that match "segment_0.mp4", "segment_1.mp4", etc.
+    // We'll keep reading until we can no longer find a file.
+    let index = 0;
+    const segments = [];
+  
+    while (true) {
+      const name = `segment_${index}.mp4`;
+      try {
+        const data = await ffmpeg.readFile(name);
+        segments.push({ name, data });
+        // optionally remove from FS
+        await ffmpeg.deleteFile(name);
+        index++;
+      } catch {
+        // no more segments
+        break;
+      }
+    }
+  
+    return segments;
+  }
+  
+  /**
+   * Encode a single segment with libx265
+   */
+  let i = 0;
+  async function encodeSegmentX265(segment, crf = 28) {
+    const ff = await newFFmpeg();
+  
+    // Write the segment data
+    await ff.writeFile(segment.name, segment.data);
+  
+    // We'll produce an output "encoded_XXX.mp4"
+    const outName = `encoded_${segment.name}`;
+  
+    let j = ++i;
+    
+    console.log("ENCODE IN", j);
+  
+    await ff.exec([
+      "-i", segment.name,
+      "-c:v", "libx265",
+      "-crf", `${crf}`,
+      "-c:a", "copy", // keep original audio if present
+      "-threads", "1",
+      outName,
+    ]);
+  
+    const outData = await ff.readFile(outName);
+  
+    // Cleanup
+    await ff.deleteFile(segment.name);
+    await ff.deleteFile(outName);
+  
+    console.log("ENCODE OUT", j);
+  
+    ff.terminate();
+    return { name: outName, data: outData };
+  }
+  
+  /**
+   * Encode multiple segments in parallel using Promise.all
+   */
+  async function encodeAllSegmentsParallel(segments, crf) {
+    const tasks = segments.map(seg => encodeSegmentX265(seg, crf));
+    return Promise.all(tasks);
+  }
+  
+  /**
+   * Concatenate all encoded segments back into a single MP4
+   */
+  async function concatSegments(ffmpeg, encodedSegs) {
+    for (const seg of encodedSegs) {
+      await ffmpeg.writeFile(seg.name, seg.data);
+    }
+    // Create a concat list
+    const listFile = "concat.txt";
+    const listContent = encodedSegs.map(s => `file '${s.name}'`).join("\n");
+    await ffmpeg.writeFile(listFile, listContent);
+  
+    const outName = "finalOutput.mp4";
+  
+    await ffmpeg.exec([
+      "-f", "concat",
+      "-safe", "0",
+      "-i", listFile,
+      "-c", "copy",
+      "-threads", "1",
+      outName
+    ]);
+  
+    const finalData = await ffmpeg.readFile(outName);
+  
+    // Cleanup if desired
+    // for (const seg of encodedSegs) {
+    //   await ffmpeg.unlink(seg.name);
+    // }
+    // await ffmpeg.unlink(listFile);
+    // await ffmpeg.unlink(outName);
+  
+    return { name: outName, data: finalData };
+  }
+  
+  /**
+   * Main function
+   *  1. Load a "splitter" FFmpeg instance
+   *  2. Segment using the segment muxer
+   *  3. Encode all segments in parallel
+   *  4. Concat them
+   *  5. Return final Blob URL
+   */
+  window.encodeWithFFmpegWasm = async function(src, segmentTime = 10, crf = 28) {
+    // 1) Create the "splitter" instance & load input
+    const splitterFF = await newFFmpeg();
+    const inputFile = await fetchFile(src);
+    const inputName = "input.mp4";
+    await splitterFF.writeFile(inputName, inputFile);
+  
+    console.log("SEG NO", segmentTime);
+    // 2) Segment the input video
+    const segments = await segmentVideo(splitterFF, inputName, segmentTime);
+    console.log("SEGMENT", segments.length);
+  
+    // Cleanup / exit
+    await splitterFF.deleteFile(inputName);
+    splitterFF.terminate();
+  
+    if (!segments.length) {
+      throw new Error("No segments were created!");
+    }
+  
+    // 3) Encode all segments in parallel
+    const encodedSegments = await encodeAllSegmentsParallel(segments, crf);
+    console.log("ENCODE END");
+  
+    // 4) Concat them in a new FFmpeg instance
+    const concatFF = await newFFmpeg();
+    const { data: finalData } = await concatSegments(concatFF, encodedSegments);
+    concatFF.terminate();
+    console.log("CONCAT");
+  
+    // 5) Convert to Blob URL
+    const blob = new Blob([finalData.buffer], { type: "video/mp4" });
+    const url = URL.createObjectURL(blob);
+    console.log("Final output Blob URL:", url);
+    return url;
+  };
+  
+  })/*()*/;
+  

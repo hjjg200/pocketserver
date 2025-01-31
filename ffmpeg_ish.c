@@ -1,3 +1,6 @@
+// +build linux,386
+// linux and 386
+// build for iSH
 
 #include "ffmpeg_ish.h"
 
