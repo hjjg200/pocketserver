@@ -353,10 +353,10 @@ var fetchFile = async (file) => {
 };
 
 // src/main.js
-window.ffmpegRunCommands = async function(name, inputAry, cmds) {
+window.ffmpegRunCommands = async function(blob, cmds) {
   const ffmpeg = await newFFmpeg();
-  const inputFileName = `input${guessExtension(name)}`;
-  await ffmpeg.writeFile(inputFileName, new Uint8Array(inputAry));
+  const inputFileName = `input.dat`;
+  await ffmpeg.writeFile(inputFileName, await fetchFile(blob));
   const ret = {};
   for (let cmd of cmds) {
     const exec = cmd.args[0] === "ffmpeg" ? ffmpeg.exec : ffmpeg.ffprobe;
@@ -365,13 +365,6 @@ window.ffmpegRunCommands = async function(name, inputAry, cmds) {
     args[cmd.output] = "output" + cmd.outputExt;
     await exec(args.slice(1));
     ret[cmd.outputExt] = new Blob([await ffmpeg.readFile(args[cmd.output])], { type: cmd.outputMimeType });
-    if (cmd.outputPost) {
-      try {
-        ret[cmd.outputExt] = await cmd.outputPost(ret[cmd.outputExt]);
-      } catch {
-        return {};
-      }
-    }
   }
   return ret;
 };
@@ -521,9 +514,15 @@ async function copyMetadataAndCover(ffmpeg, inputFileName, correctedFileName, fi
     // Mark it as attached cover
     "-disposition:v:0",
     "attached_pic",
-    // Copy all metadata from input #1 (the original source)
+    // Copy all metadata from input #1 (original)
     "-map_metadata",
     "1",
+    // Copy metadata from the first subtitle stream
+    "-map_metadata",
+    "1:s:0",
+    // Ensure ID3v2 version is set correctly
+    "-id3v2_version",
+    "3",
     // Prevent chrome freeze when embedding album art
     "-threads",
     "1",
@@ -532,29 +531,32 @@ async function copyMetadataAndCover(ffmpeg, inputFileName, correctedFileName, fi
     finalFileName
   ]);
 }
-window.ffmpegSoundCheck = async (src2, targetLUFS = -14) => {
+window.ffmpegSoundCheck = new ProgressTask(async function(inputFile, targetLUFS = -14) {
+  this.add(7);
   const ffmpeg = await newFFmpeg();
-  const inputFile = await fetchFile(src2);
-  const inputFileName = `input${guessExtension(src2)}`;
+  if (gDEBUG) {
+    ffmpeg.on("log", (event) => {
+      console[event.type === "stderr" ? "warn" : "log"](event.message);
+    });
+  }
+  const [inputStem, inputExt] = parseFilename(inputFile.name);
+  const inputFileName = `input${inputExt}`;
   const tempCorrectedFile = "tempCorrected.m4a";
   const finalOutputFile = "finalOutput.m4a";
-  console.log("Writing input file to FS...");
-  await ffmpeg.writeFile(inputFileName, inputFile);
-  console.log(await getTextMetadata(ffmpeg, inputFileName));
-  console.log("Analyzing loudness (pass 1)...");
+  this.done("Writing input file to FS...");
+  await ffmpeg.writeFile(inputFileName, await fetchFile(inputFile));
+  this.done("Analyzing loudness (pass 1)...");
   const analysis = await analyzeLoudnessPass1(ffmpeg, inputFileName, targetLUFS);
-  console.log("Pass 1 analysis:", analysis);
-  console.log("Correcting loudness (pass 2)...");
+  this.done("Pass 1 analysis:", analysis);
+  this.done("Correcting loudness (pass 2)...");
   await correctLoudnessPass2(ffmpeg, inputFileName, tempCorrectedFile, analysis, targetLUFS);
-  console.log("Merging metadata & cover art...");
+  this.done("Merging metadata & cover art...");
   await copyMetadataAndCover(ffmpeg, inputFileName, tempCorrectedFile, finalOutputFile);
-  console.log("Reading final file...");
+  this.done("Reading final file...");
   const finalData = await ffmpeg.readFile(finalOutputFile);
-  const blob = new Blob([finalData.buffer], { type: "audio/mp4" });
-  const url = URL.createObjectURL(blob);
-  console.log("Final Blob URL:", url);
-  return url;
-};
+  this.done("Sound check complete");
+  return new File([finalData.buffer], `${inputStem}.m4a`, { type: "audio/mp4" });
+});
 window.ffmpegGetMetadata = async (buf, contentType) => {
   const metadata = {};
   const [cat, sub] = contentType.split("/");

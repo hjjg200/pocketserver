@@ -211,7 +211,13 @@ func recursiveNewName(dir string, fn string) string {
 	return fmt.Sprintf("%s-%d%s", stem, time.Now().Unix(), ext)
 }
 
+func getUploadFullpath(album, base string) string {
+	return filepath.Join(gAppInfo.UploadDir, album, base)
+}
 
+func getMetadataFullpath(album, base, ext string) string {
+	return filepath.Join(gAppInfo.MetadataDir, gAppInfo.UploadDir, album, base+ext)
+}
 
 func makeAuthCookie(val string, exp time.Time) *http.Cookie {
 	return &http.Cookie{

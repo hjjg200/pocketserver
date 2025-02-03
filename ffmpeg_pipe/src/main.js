@@ -15,13 +15,13 @@ import { fetchFile } from '@ffmpeg/util';
 
 
 
-window.ffmpegRunCommands = async function (name, inputAry, cmds) {
+window.ffmpegRunCommands = async function (blob, cmds) {
 
   const ffmpeg = await newFFmpeg();
 
   // Clone array and write
-  const inputFileName = `input${guessExtension(name)}`;
-  await ffmpeg.writeFile(inputFileName, new Uint8Array(inputAry));
+  const inputFileName = `input.dat`;
+  await ffmpeg.writeFile(inputFileName, await fetchFile(blob));
 
   const ret = {};
   for (let cmd of cmds) {
@@ -35,14 +35,6 @@ window.ffmpegRunCommands = async function (name, inputAry, cmds) {
     await exec(args.slice(1));
   
     ret[cmd.outputExt] = new Blob([await ffmpeg.readFile(args[cmd.output])], { type: cmd.outputMimeType });
-
-    if (cmd.outputPost) {
-      try {
-        ret[cmd.outputExt] = await cmd.outputPost(ret[cmd.outputExt]);
-      } catch {
-        return {};
-      }
-    }
 
   }
   
@@ -249,8 +241,14 @@ async function copyMetadataAndCover(ffmpeg, inputFileName, correctedFileName, fi
     // Mark it as attached cover
     "-disposition:v:0", "attached_pic",
 
-    // Copy all metadata from input #1 (the original source)
+    // Copy all metadata from input #1 (original)
     "-map_metadata", "1",
+
+    // Copy metadata from the first subtitle stream
+    "-map_metadata", "1:s:0",
+
+    // Ensure ID3v2 version is set correctly
+    "-id3v2_version", "3",
 
     // Prevent chrome freeze when embedding album art
     "-threads", "1",
@@ -271,45 +269,49 @@ async function copyMetadataAndCover(ffmpeg, inputFileName, correctedFileName, fi
  *     6. Merge cover art + metadata from input
  *     7. Return final .m4a blob
  */
-window.ffmpegSoundCheck = async (src, targetLUFS = -14) => {
+window.ffmpegSoundCheck = new ProgressTask(async function (inputFile, targetLUFS = -14) {
+
+  this.add(7);
   const ffmpeg = await newFFmpeg();
 
+  if (gDEBUG) {
+    ffmpeg.on("log", (event) => {
+      console[event.type === "stderr" ? "warn" : "log"](event.message);
+    });
+  }
+
   // 0) Download the file into memory
-  const inputFile = await fetchFile(src);
-  const inputFileName = `input${guessExtension(src)}`; // e.g. input.mp3, input.m4a, etc.
+  const [ inputStem, inputExt ] = parseFilename(inputFile.name);
+  const inputFileName = `input${inputExt}`;
   const tempCorrectedFile = "tempCorrected.m4a";
   const finalOutputFile = "finalOutput.m4a";
 
   // Write the input file to the in-memory FS
-  console.log("Writing input file to FS...");
-  await ffmpeg.writeFile(inputFileName, inputFile);
+  this.done("Writing input file to FS...");
+  await ffmpeg.writeFile(inputFileName, await fetchFile(inputFile));
 
-  console.log(await getTextMetadata(ffmpeg, inputFileName));
-  
   // 3) Loudness Analysis (Pass 1)
-  console.log("Analyzing loudness (pass 1)...");
+  this.done("Analyzing loudness (pass 1)...");
   const analysis = await analyzeLoudnessPass1(ffmpeg, inputFileName, targetLUFS);
-  console.log("Pass 1 analysis:", analysis);
+  this.done("Pass 1 analysis:", analysis);
 
   // 4) Loudness Correction (Pass 2) -> tempCorrected.m4a (audio only, minimal metadata)
-  console.log("Correcting loudness (pass 2)...");
+  this.done("Correcting loudness (pass 2)...");
   await correctLoudnessPass2(ffmpeg, inputFileName, tempCorrectedFile, analysis, targetLUFS);
 
   // 5) Merge original metadata + album art (re-encoded to MJPEG) into finalOutput.m4a
-  console.log("Merging metadata & cover art...");
+  this.done("Merging metadata & cover art...");
   await copyMetadataAndCover(ffmpeg, inputFileName, tempCorrectedFile, finalOutputFile);
 
   // 6) Read finalOutput.m4a back from FS, make a blob
-  console.log("Reading final file...");
+  this.done("Reading final file...");
   const finalData = await ffmpeg.readFile(finalOutputFile);
-  const blob = new Blob([finalData.buffer], { type: "audio/mp4" });
 
-  // 7) Create a URL for the final .m4a
-  const url = URL.createObjectURL(blob);
-  console.log("Final Blob URL:", url);
+  this.done("Sound check complete");
 
-  return url;
-};
+  return new File([finalData.buffer], `${inputStem}.m4a`, { type: "audio/mp4" });
+
+});
 
 
 window.ffmpegGetMetadata = async (buf, contentType) => {

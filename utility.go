@@ -27,6 +27,7 @@ import (
 	"time"
 	"sort"
 	"sync"
+	"runtime"
 )
 
 type Semaphore struct{
@@ -626,32 +627,32 @@ func getInternetInterface() (string, error) {
 
 
 // Resolve symlink relative to the directory it resides in
-func resolveSymlink(fullPath string) (string, bool) {
+func resolveSymlink(fullpath string) (string) {
 
 	// Check if the file exists and is executable
-	info, err := os.Lstat(fullPath)
+	info, err := os.Lstat(fullpath)
 	if err != nil {
-		return "", false
+		return fullpath
 	}
 
 	// If the file is a symlink, resolve it
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", false
+	if info.Mode()&os.ModeSymlink == 0 {
+		return fullpath
 	}
 		
-	target, err := os.Readlink(fullPath)
+	target, err := os.Readlink(fullpath)
 	if err != nil {
-		return "", false
+		return fullpath
 	}
 
 	// Check if the symlink is relative or absolute
 	if !filepath.IsAbs(target) {
 		// Resolve relative symlink based on the base directory
-		target = filepath.Join(filepath.Dir(fullPath), target)
+		target = filepath.Join(filepath.Dir(fullpath), target)
 	}
 
 	// Clean and evaluate the final path
-	return filepath.Clean(target), true
+	return filepath.Clean(target)
 
 }
 
@@ -701,6 +702,50 @@ func getCRC32OfBytes(data []byte) string {
 
 func mimeTypeByName(name string) string {
 	return mime.TypeByExtension(filepath.Ext(name))
+}
+
+// joinCommandArgs joins a slice of command arguments into a single string
+// that works for three scenarios:
+//  • On Windows: for use with "powershell -Command", the command string is prefixed
+//    with an ampersand and each argument is wrapped in single quotes (with embedded
+//    single quotes doubled).
+//  • On POSIX systems for "sh -c": each argument that contains whitespace is wrapped
+//    in single quotes (with a simple escape for any single quote).
+//  • For a CGO execvp scenario: the same POSIX-style string is returned, so that when
+//    the C code naively tokenizes the string on spaces the intended tokens are recovered.
+// 
+// NOTE: If any argument contains spaces, its quotes will be preserved when tokenized
+// by a naive "strtok(..., \" \")" in C. That may or may not be acceptable; a more
+// robust solution would pass an array from Go to C.
+func joinCommandArgs(args []string) string {
+	if runtime.GOOS == "windows" {
+		// For PowerShell, prefix with & and wrap every argument in single quotes.
+		quoted := make([]string, 0, len(args))
+		for _, arg := range args {
+			// In PowerShell, single quotes are escaped by doubling them.
+			arg = strings.ReplaceAll(arg, "'", "''")
+			quoted = append(quoted, "'"+arg+"'")
+		}
+		// Prepend an ampersand to indicate invocation.
+		return "& " + strings.Join(quoted, " ")
+	} else {
+		// For sh -c and execvp, we do simple POSIX shell quoting.
+		quoted := make([]string, 0, len(args))
+		for _, arg := range args {
+			// If the argument contains any whitespace or shell special characters,
+			// wrap it in single quotes. (This is a simple approach and may need to be
+			// adjusted if your arguments can be arbitrarily complex.)
+			if strings.IndexAny(arg, " \t\n'\"\\") != -1 {
+				// To include a single quote in a single-quoted POSIX string, the common trick is:
+				// ' → '\''  (i.e. end quote, escape a literal single quote, then restart quote)
+				safe := strings.ReplaceAll(arg, "'", `'\''`)
+				quoted = append(quoted, "'"+safe+"'")
+			} else {
+				quoted = append(quoted, arg)
+			}
+		}
+		return strings.Join(quoted, " ")
+	}
 }
 
 // LRU
@@ -854,4 +899,95 @@ func (c *LRUCache[K, V]) Keys() []K {
 		keys = append(keys, elem.Value.(*entry[K, V]).key)
 	}
 	return keys
+}
+
+// TimeoutPipe wraps an os.Pipe with timeout detection and redirection.
+type TimeoutPipe struct {
+	r           *os.File       // Read end of the pipe.
+	w           *os.File       // Write end of the pipe.
+	redirect    io.Writer      // Destination for data read from the pipe.
+	timeout     time.Duration  // Timeout period.
+	timeoutChan chan struct{}  // Signals when a timeout occurs.
+}
+// makeTimeoutPipe creates a pipe that reads output, writes it to the redirect writer,
+// and sends a timeout signal if no data is read within `timeout`. It returns:
+//  - timeoutChan (read-only) → Receives a signal when a timeout occurs.
+//  - writer (write-end of the pipe) → Where data should be written.
+func makeTimeoutPipe(redirect io.Writer, timeout time.Duration) (timeoutChan <-chan struct{}, writer *os.File, err error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tp := &TimeoutPipe{
+		r:           r,
+		w:           w,
+		redirect:    redirect,
+		timeout:     timeout,
+		timeoutChan: make(chan struct{}, 1), // Buffered so send is non-blocking.
+	}
+
+	// Start monitoring the read-end of the pipe.
+	go tp.monitor()
+
+	return tp.timeoutChan, w, nil
+}
+
+// monitor continuously reads from the pipe and writes to the redirect writer.
+// If no data is read for `tp.timeout`, a timeout signal is sent.
+func (tp *TimeoutPipe) monitor() {
+	defer func() {
+		tp.w.Close()
+		tp.r.Close()
+	}()
+
+	buf := make([]byte, 1024)
+
+	for {
+		// Start a timeout timer
+		timeout := time.After(tp.timeout)
+
+		// Read data from the pipe
+		n, err := func() (int, error) {
+			// Use a select to either read data or trigger a timeout
+			readDone := make(chan struct{})
+			var bytesRead int
+			var readErr error
+
+			go func() {
+				bytesRead, readErr = tp.r.Read(buf)
+				close(readDone)
+			}()
+
+			select {
+			case <-timeout:
+				// If timeout occurs before reading data, send timeout signal.
+				select {
+				case tp.timeoutChan <- struct{}{}:
+				default: // Prevent blocking if already sent.
+				}
+				return 0, nil // Return without error to keep looping.
+			case <-readDone:
+				// Data was read, return results.
+				return bytesRead, readErr
+			}
+		}()
+
+		// Handle read error
+		if err != nil {
+			if err == io.EOF {
+				return // Stop monitoring on EOF.
+			}
+			fmt.Fprintf(os.Stderr, "Read error: %v\n", err)
+			return
+		}
+
+		// Write data to redirect writer
+		if n > 0 && tp.redirect != nil {
+			_, werr := tp.redirect.Write(buf[:n])
+			if werr != nil {
+				fmt.Fprintf(os.Stderr, "Redirect write error: %v\n", werr)
+			}
+		}
+	}
 }

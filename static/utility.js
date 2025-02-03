@@ -479,3 +479,90 @@ function getCookie(name) {
 function splitMimeType(mimeType) {
   return mimeType.split("/", 2);
 }
+
+// https://stackoverflow.com/questions/28222228/javascript-es6-test-for-arrow-function-built-in-function-regular-function
+const isArrowFn = (fn) => 
+  (typeof fn === 'function') &&
+  !/^(?:(?:\/\*[^(?:\*\/)]*\*\/\s*)|(?:\/\/[^\r\n]*))*\s*(?:(?:(?:async\s(?:(?:\/\*[^(?:\*\/)]*\*\/\s*)|(?:\/\/[^\r\n]*))*\s*)?function|class)(?:\s|(?:(?:\/\*[^(?:\*\/)]*\*\/\s*)|(?:\/\/[^\r\n]*))*)|(?:[_$\w][\w0-9_$]*\s*(?:\/\*[^(?:\*\/)]*\*\/\s*)*\s*\()|(?:\[\s*(?:\/\*[^(?:\*\/)]*\*\/\s*)*\s*(?:(?:['][^']+['])|(?:["][^"]+["]))\s*(?:\/\*[^(?:\*\/)]*\*\/\s*)*\s*\]\())/.test(fn.toString());
+
+class ProgressTask {
+  constructor (handler) {
+    if (isArrowFn(handler))
+      throw new Error("Cannot use arrow function for ProgressTask");
+    if (handler.constructor.name !== "AsyncFunction")
+      throw new Error("Cannot use non-async function");
+
+    this.handler = handler;
+  }
+  call(...args) {
+    const _promises = [];
+    const _pairs = [];
+    let _total = 0;
+    let _count = 0;
+
+    let _startResolve;
+    const _startPromise = new Promise(rs => _startResolve = rs);
+
+    const add = function(delta) {
+
+      if (_startResolve) {
+        _startResolve(null);
+        _startResolve = null;
+      }
+
+      _total += delta;
+      for (let i = 0; i < delta; i++) {
+        let rs, rj;
+        let p = new Promise((resolve, reject) => [rs, rj] = [resolve, reject]);
+        _promises.push(p);
+        _pairs.push({resolve: rs, reject: rj});
+      }
+
+    };
+    const done = function(...args) {
+
+      if (_pairs.length < 1) {
+        throw new Error("Attempt of done after the task is done");
+      }
+  
+      _pairs.shift().resolve({ count: ++_count, message: args.join(" ") });
+
+    }
+    
+    const handlerPromise = (async() => {
+      try {
+        return await this.handler.apply({add, done}, args);
+      } catch(err) {
+        while (_pairs.length > 0) {
+          _pairs.shift().reject(err);
+        }
+        throw err;
+      }
+    })();
+    handlerPromise.track = async function(callback) {
+      await _startPromise;
+
+      let p;
+      while((p = _promises.shift())) {
+        try {
+          const { count, message } = await p;
+          callback(message, count / _total);
+        } catch(err) {
+          throw err;
+        }
+      }
+
+      return await handlerPromise;
+    };
+
+    return handlerPromise;
+  }
+};
+
+
+function parseFilename(base) {
+  const splits = base.split(".");
+  const ext = `.${splits.pop()}`;
+  const stem = splits.join(".");
+  return [stem, ext];
+}

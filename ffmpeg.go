@@ -12,6 +12,7 @@ import (
 	"mime"
 	"strings"
 	"errors"
+	"time"
 	"sync/atomic"
 
     "github.com/gorilla/websocket"
@@ -22,24 +23,82 @@ const FFMPEG_PREFIX = "[FFmpeg]"
 
 func initFFmpeg() {
 	arg0	:= filepath.Base(os.Args[0])
-	ext		:= filepath.Ext(arg0)
-	arg0	= arg0[:len(arg0)-len(ext)]
+	arg0	= strings.TrimSuffix(arg0, filepath.Ext(arg0))
 
 	// Check if the program is invoked as "ffmpeg" or the main app
 	if (arg0 == "ffmpeg" || arg0 == "ffprobe") {
-		if len(os.Args) == 1 {
-			logInfo(findFFmpegInPath())
-			os.Exit(0)
+
+		err := subFFmpeg(os.Args)
+		if err != nil {
+			err = executeFFmpeg(os.Args, os.Stdout, os.Stderr)
+			if err != nil {
+				logFatal(err)
+			}
 		}
 
-		subFFmpeg(os.Args)
 		os.Exit(0)
 	} else {
 		ffmpegHandler = makeFFmpegHandler()
 	}
 }
 
+var ffmpegSempahore = NewSemaphore(PERF_FFMPEG_MAX_CONCURRENT, 0)
+// Find the native ffmpeg and run it
+func executeFFmpeg(args []string, stdout, stderr *os.File) (error) {
+
+	ffmpegSempahore.Acquire()
+	defer ffmpegSempahore.Release()
+
+	arg0 := filepath.Base(args[0])
+	arg0 = strings.TrimSuffix(arg0, filepath.Ext(arg0))
+
+	nativeFFs, err := findFFmpegInPath()
+	native, ok := nativeFFs[arg0]
+	if !ok || err != nil {
+		return fmt.Errorf("No native ffmpeg is found")
+	}
+	args[0] = native
+	if arg0 == "ffmpeg" {
+		// ffprobe doesn't receive -y, use -y for ffmpeg only
+		args = append([]string{args[0], "-y"}, args[1:]...)
+	}
+
+	// Make the ffmpeg to be terminated if no stderr for 60 seconds
+	var stderrWriter io.Writer = stderr
+	if stderr == nil {
+		stderrWriter = io.Discard
+	}
+	timeout, wrappedStderr, err := makeTimeoutPipe(stderrWriter, time.Second * 60)
+	defer wrappedStderr.Close()
+
+	// ---
+	wait, terminator, err := _executeFFmpeg(
+		args,
+		stdout,
+		wrappedStderr,
+	)
+
+	if err != nil {
+		return fmt.Errorf("Failed to start ffmpeg process: %w", err)
+	}
+
+	select {
+	case <-wait:
+		return nil
+	case <-timeout:
+		logDebug("Running terminator for process")
+		terminator()
+		return fmt.Errorf("FFmpeg timed out")
+	}
+
+}
+
 func findFFmpegInPath() (map[string]string, error) {
+
+	// Get the executable path
+	pocketExecPath, err := os.Executable()
+	must(err)
+	pocketExecPath = resolveSymlink(pocketExecPath)
 
 	stems := []string{"ffmpeg", "ffprobe"}
 
@@ -82,22 +141,18 @@ func findFFmpegInPath() (map[string]string, error) {
 			// Check if it matches any of the requested basenames
 			if _, found := stemSet[stem]; found {
 				// Ensure it's executable and not already matched
-				fullPath := filepath.Join(dir, base)
+				fullpath := filepath.Join(dir, base)
 
 				// Follow symlink
-				resolved, ok := resolveSymlink(fullPath)
-				if ok {
-					fullPath = resolved
-				}
+				fullpath = resolveSymlink(fullpath)
 
 				// Check it is not pocketserver
-				if pocketExecPath, err := filepath.Abs(os.Args[0]);
-					err == nil && fullPath == pocketExecPath {
+				if fullpath == pocketExecPath {
 					continue
 				}
 
 				if _, exists := matches[stem]; !exists {
-					matches[stem] = fullPath
+					matches[stem] = fullpath
 				}
 			}
 		}
@@ -675,22 +730,12 @@ func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 
 
 // Subordinate worker: Sends commands to the main worker
-func subFFmpeg(args []string) {
-
-	prefix := "[POCKETSERVER.FFMPEG]"
-	socketPath := filepath.Join(os.TempDir(), "pocketserver.ffmpeg.sock")
-
-	// Connect to the UNIX socket
-	conn, err := net.Dial("unix", socketPath)
-	if err != nil {
-		logFatal(prefix, "Dial error:", err)
-	}
-	defer conn.Close()
+func subFFmpeg(args []string) error {
 
 	// Parse arguments
 	ffargs, err := parseFFmpegArgs(args)
 	if err != nil {
-		logFatal(prefix, "Parse argument error:", err)
+		return fmt.Errorf("Parse argument error: %w", err)
 	}
 
 	// If run as ffprobe and there is only output it means it is input
@@ -703,8 +748,19 @@ func subFFmpeg(args []string) {
 	// Send arguments to the main worker
 	ffargsJson, err := json.Marshal(ffargs)
 	if err != nil {
-		logFatal(prefix, "Failed to marshal json", err)
+		return fmt.Errorf("Failed to marshal json: %w", err)
 	}
+
+	
+	// DO THE WORK VIA WEBSOCKET
+	// Connect to the UNIX socket
+	socketPath := filepath.Join(os.TempDir(), "pocketserver.ffmpeg.sock")
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return fmt.Errorf("Dial error: %w", err)
+	}
+	defer conn.Close()
+
 	fmt.Fprint(conn, fmt.Sprintf("%s %d\n%s", "ffargsJson", len(ffargsJson), ffargsJson))
 	//logInfo(FFMPEG_PREFIX, "SPAWNED pocketserver_ish SUBORDINATE WORKER FOR PROCESSING", string(ffargsJson))
 
@@ -716,14 +772,14 @@ func subFFmpeg(args []string) {
 			if err == io.EOF {
 				break
 			}
-			logFatal(prefix, "failed to read header", err)
+			return fmt.Errorf("failed to read header: %w", err)
 		}
 
         // 3) read exactly msgLen bytes
         payload := make([]byte, msgLen)
         _, err = io.ReadFull(reader, payload)
         if err != nil {
-            logFatal(prefix, "failed to read payload:", err)
+			return fmt.Errorf("failed to read payload: %w", err)
         }
 
         // 4) Output to stdout or stderr
@@ -734,10 +790,11 @@ func subFFmpeg(args []string) {
 			fmt.Fprintln(os.Stderr, string(payload))
         default:
             // Unknown stream type, decide what to do
-            logFatal(prefix, "Unknown stream type", streamType)
+			return fmt.Errorf("Unknown stream type: %v", streamType)
             // we still have the data in 'payload' if needed
         }
     }
 
+	return nil
 
 }

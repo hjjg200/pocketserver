@@ -9,10 +9,6 @@
     <link rel="stylesheet" href="/static/settled.css">
     <link rel="stylesheet" href="/static/style.css">
 
-    <script type="module" src="/static/ffmpeg_pipe.js"></script>
-    <script src="/static/hash-wasm/sha1.umd.min.js"></script>
-    <script src="/static/hash-wasm/crc32.umd.min.js"></script>
-    <script src="/static/utility.js"></script>
   </head>
   <body>
     <div class="main-wrap">
@@ -89,8 +85,7 @@
             <img class="album-art"></img>
           </div>
           <div class="buttons">
-            <audio style="display: none;">
-            </audio>
+            <audio style="display: none;"></audio>
             <div class="prev button"><img src="/static/prevtrack.svg" alt=""></div>
             <div class="play-pause">
               <div class="play button"><img src="/static/play.svg" alt=""></div>
@@ -115,33 +110,25 @@
               <div class="shuffle button"><img src="/static/shuffle.svg" alt=""></div>
             </div>
         </div>
-        <ul class="music-playlist">
-          <!--<li>
-            <div class="left">
-              <div class="title">Odoriko</div>
-              <div class="artist">Vaundy</div>    
-            </div>
-            <div class="right">
-              03:50
-            </div>
-          </li>-->
-        </ul>
+        <ul class="music-playlist"></ul>
           
       </div>
 
       <div class="total-size-info">-</div>
 
-      <div class="others-container">
-
-      </div>
-      <div class="media-container">
-        
-      </div>
+      <div class="others-container"></div>
+      <div class="media-container"></div>
     </div>
     </div>
   </body>
-  <script src="/static/soundcheck.js"></script>
+  <script src="/static/hash-wasm/sha1.umd.min.js"></script>
+  <script src="/static/hash-wasm/crc32.umd.min.js"></script>
+  <script src="/static/utility.js"></script>
   <script>
+
+(async() => {
+  window.gApiManifest = await (await fetch("/api/manifest")).json();
+})();
 
 const DEFAULT_ARTWORK = "/static/default_artwork.svg";
 const PLACEHOLDER_IMAGE = "/static/placeholder.svg";
@@ -161,6 +148,13 @@ const URL_LIST = "/list";
 const TYPES_MEDIA = ["image", "video", "audio"];
 let gDEBUG = false;
 
+  </script>
+
+  <script src="/static/upload.js"></script>
+  <script type="module" src="/static/ffmpeg_pipe.js"></script>
+  <script>
+
+
 document.addEventListener("DOMContentLoaded", () => {
   checkServer();
 });
@@ -173,28 +167,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const subMetaCommands = [
     {
       "input": 2,
-      "output": 9,
+      "output": 11,
       "outputExt": EXT_META_TEXT,
       "outputMimeType": "application/json",
-      "outputPost": async (blob) => {
-        const txtMeta = JSON.parse(await blob.text());
-        if (!txtMeta.format?.duration || txtMeta.format?.duration === "N/A")
-          throw new Error("Not a media");
-        
-        const post = {};
-        post.duration = txtMeta.format.duration;
-        post.album = txtMeta.format.tags?.album || "";
-        post.artist = txtMeta.format.tags?.artist || "";
-        post.title = txtMeta.format.tags?.title || "";
-
-        return new Blob([JSON.stringify(post)], { type: "application/json" });
-
-      },
       "mimeTypes": ["audio/*", "video/*", "*/webp"],
       "args": [
         "ffprobe", "-i", "",
         "-show_format",
-        "-show_entries", "format_tags=album,artist,title,comment:format=duration",
+        "-select_streams", "a",
+        "-show_entries", "format_tags:stream_tags:format=duration",
         "-print_format", "json",
         "-o", ""
       ]
@@ -252,9 +233,27 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   ];
 
-  async function getEligibleCommands(name, cmds) {
+  window.ffmpegProcessTextMetadata = function(txtMeta) {
+    
+    if (!txtMeta.format?.duration || txtMeta.format?.duration === "N/A")
+      return {};
+    
+    const processed = {};
+    processed.duration = txtMeta.format.duration;
+
+    const tag = name => {
+      return txtMeta.format.tags?.[name] || txtMeta.streams[0]?.tags?.[name] || ""; 
+    };
+    processed.album = tag("album");
+    processed.artist = tag("artist");
+    processed.title = tag("title");
+
+    return processed;
+
+  }
+
+  function getEligibleCommands(mimeType, cmds) {
     const ret = [];
-    const mimeType = await (await fetch(buildURL("/api/typeByName", { "name": name }))).text();
 
     for (let cmd of cmds) {
       for (let mimeTypeCond of cmd.mimeTypes) {
@@ -274,12 +273,30 @@ document.addEventListener("DOMContentLoaded", () => {
     return ret;
   }
 
-  window.ffmpegAttemptMetadata = async function(name, input) {
+  window.ffmpegServerSideBakeMetadata = async function(album, base, mimeType) {
 
-    const cmds = await getEligibleCommands(name, subMetaCommands);
+    album = album || "";
+
+    const cmds = getEligibleCommands(mimeType, subMetaCommands);
+    if (cmds.length === 0) return;
+
+    await fetch("/api/bakeMetadata", {
+      method: "POST",
+      body: JSON.stringify({
+        album,
+        base,
+        commands: cmds
+      })
+    });
+
+  }
+
+  window.ffmpegAttemptMetadata = async function(file) {
+
+    const cmds = getEligibleCommands(file.type, subMetaCommands);
     if (cmds.length === 0) return {};
 
-    return await ffmpegRunCommands(name, input, cmds);
+    return await ffmpegRunCommands(file, cmds);
 
   };
 
@@ -395,7 +412,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
     const container = createElement("div", "album-container");
     const thumbnail = createElement("div", "album-thumbnail");
-    const img  = createElement("img");
+    const img  = createImg();
     const info = createElement("div", "album-info");
     const name = createElement("div", "name");
     const sub = createElement("div", "sub");
@@ -442,6 +459,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
         img.src = buildURL(
           src, {[QUERY_METADATA]: EXT_META_AUDIO_THUMB_SMALL}
         );
+        img.setAttribute("data-type", "audio");
       } else if (cat === "video") {
         img.src = buildURL(
           src, {[QUERY_METADATA]: EXT_META_AUDIO_THUMB}
@@ -456,7 +474,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
   }
   function createVideo(basename) {
 
-    const thumbnail = createElement("img", "thumbnail");
+    const thumbnail = createImg("thumbnail");
     const src = buildURL(
       [URL_VIEW, basename],
       {[QUERY_ALBUM]: gAlbum}
@@ -488,7 +506,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
   }
   function createImage(basename) {
 
-    const image = createElement("img", "media-body");
+    const image = createImg("media-body");
     image.setAttribute("src", PLACEHOLDER_IMAGE);
     
     observeWithCallback(image, () => {
@@ -512,11 +530,12 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
     const container = createElement("div", "music-container");
     const artContainer = createElement("div", "music-art-container");
-    const art = createElement("img", "music-art");
+    const art = createImg("music-art");
 
     art.src = DEFAULT_ARTWORK;
     observeWithCallback(art, async () => {
       art.src = buildURL(src, {[QUERY_METADATA]: EXT_META_AUDIO_THUMB_SMALL, [QUERY_ALBUM]: gAlbum});
+      art.setAttribute("data-type", "audio");
     });
 
     artContainer.appendChild(art);
@@ -563,7 +582,29 @@ const mainWrap = document.body.querySelector(".main-wrap");
     //
     container.update = async (meta) => {
       const txtMeta = buildURL(src, {[QUERY_METADATA]: EXT_META_TEXT});
-      const details = await (await fetch(txtMeta)).json() || {};
+      let details = {};
+      gPlaylistMetadata[basename] = details;
+
+      try {
+        const response = await fetch(txtMeta);
+        details = ffmpegProcessTextMetadata(await response.json());
+      } catch {}
+
+      // If malformed metadata
+      if (!details.duration) {
+        try {
+          // Request baking of metadata
+          await ffmpegServerSideBakeMetadata(gAlbum, basename, gMetadataBody.metaMap[basename].mimeType);
+          // Fetch again with refreshing cache
+          const response = await fetch(txtMeta, { cache: "no-store" });
+          details = ffmpegProcessTextMetadata(await response.json());
+        } catch {
+          throw new Error(`Failed to get or bake metadata for ${basename} in ${album}`);
+        }
+      }
+
+      // ---
+      gPlaylistMetadata[basename] = details;
 
       details.title = details.title || basename;
       details.artist = details.artist || "-";
@@ -573,6 +614,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
       title.textContent = details.title;
       artist.textContent = details.artist;
       right.textContent = formatDuration(details.duration);
+      
     };
     const containerRemove = container.remove.bind(container);
     container.remove = () => {
@@ -766,9 +808,9 @@ const mainWrap = document.body.querySelector(".main-wrap");
   const musicPlayerShuffleButton = musicPlayer.querySelector(".shuffle.button");
 
   const gAudio = document.querySelector(".music-player audio");
-  const gAudioSoundCheckDB = -17;
 
   window.gPlaylist = [];
+  window.gPlaylistMetadata = {};
   window.gAudioCurrentBase = null;
   let gAudioSeed = null;
   let gMutablePlaylist = null;
@@ -925,7 +967,6 @@ const mainWrap = document.body.querySelector(".main-wrap");
     gAudioCurrentBase = base;
     const src     = buildURL([URL_VIEW, base], {[QUERY_ALBUM]: gAlbum});
     const thumb   = buildURL(src, {[QUERY_METADATA]: EXT_META_AUDIO_THUMB});
-    const txtMeta = buildURL(src, {[QUERY_METADATA]: EXT_META_TEXT});
     
     // DOMs
     if (musicPlaylist.classList.contains("edit")) {
@@ -943,7 +984,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
     //
     await mediaActionHandlers["pause"]();
     
-    const details = await (await fetch(txtMeta)).json() || {};
+    const details = gPlaylistMetadata[base] || {};
     if (details.title === "") {
       details.title = base;
     }
@@ -956,7 +997,8 @@ const mainWrap = document.body.querySelector(".main-wrap");
       musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
       updateMusicArtBackground();
 
-      gAudio.src = await normalizeAndBlobAudio(src, gAudioSoundCheckDB);
+      await fetch("/ping"); // Ensure the server is up
+      gAudio.src = src;
 
     }, 5000);
 
@@ -1447,256 +1489,6 @@ const mainWrap = document.body.querySelector(".main-wrap");
 })();
 
 
-(() => { // UPLOAD
-  const upload_input = document.getElementById("upload-input");
-  const uploadInfoContainer = document.querySelector(".upload-info-container");
-  const uploadInfoFilename = document.querySelector(".upload-info-container .file-name");
-  const uploadInfoFileno = document.querySelector(".upload-info-container .file-no");
-  const uploadInfoProgress = document.querySelector(".upload-info-container .progress-bar");
-  const uploadInfoSpeed = document.querySelector(".upload-info-container .speed");
-  const uploadInfoTime = document.querySelector(".upload-info-container .time");
-  window.upload_processed = false;
-
-  function setUploadProgress(percent) {
-    uploadInfoProgress.style.width = percent + "%";
-  }
-
-  upload_input.addEventListener("change", function() {
-    if(upload_processed) return;
-    if(this.files.length == 0) return;
-
-    uploadFiles([...this.files]);
-  }, false);
-
-  window.uploadFiles = async function (files) {
-
-    mainWrap.scrollTo({ top: 0, behavior: 'smooth' });
-
-    upload_processed = true;
-    uploadInfoContainer.classList.remove("error");
-    uploadInfoContainer.style.display = '';
-
-    const start = Date.now();
-    let totalSize = 0;
-    let totalUploaded = 0;
-    for (const file of files) {
-      totalSize += file.size;
-    }
-
-    try {
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        uploadInfoFilename.textContent = file.name;
-        uploadInfoFileno.textContent = (i+1) + " of " + files.length;
-        setUploadProgress(0);
-
-        await uploadSingleFile(file, (delta) => {
-
-          totalUploaded += delta;
-
-          if(totalUploaded > 0) {
-
-            const elapsed = (Date.now() - start) / 1000;
-            const speed = totalUploaded / elapsed;
-            uploadInfoSpeed.textContent = formatBytes(speed) + "/s";
-
-            const left = Math.max(1, Math.floor((elapsed/totalUploaded) * (totalSize - totalUploaded)));
-
-            const mins = Math.floor(left / 60);
-            const secs = left % 60;
-            uploadInfoTime.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-
-          } else {
-            uploadInfoSpeed.textContent = "0 B/s";
-            uploadInfoTime.textContent = "-";
-          }
-
-        });
-      
-      }
-
-      //uploadInfoContainer.style.display = 'none';
-      uploadInfoSpeed.textContent = formatBytes(totalUploaded) + " uploaded";
-      uploadInfoTime.textContent = "-";
-
-    } catch(error) {
-
-      checkServer();
-      uploadInfoContainer.classList.add("error");
-      uploadInfoSpeed.textContent = error.message;
-      return;
-
-    }
-
-    upload_processed = false;
-    await populateList(false);
-    await initializeAudio();
-
-  }
-
-  async function uploadSingleFile(file, ondelta) {
-    
-    const arrayBuffer = await file.arrayBuffer(); // Read the file as an ArrayBuffer
-    const crc = await hashwasm.crc32(new Uint8Array(arrayBuffer));
-
-    console.log(0, crc);
-
-    return new Promise(async (resolve, reject) => {
-      // Create FormData
-      const formData = new FormData();
-      formData.append('base', file.name);
-      formData.append('crc', crc);
-      formData.append('file', file);
-
-      console.log(1);
-      // Check for sub metadata
-      const metaBlobMap = await ffmpegAttemptMetadata(file.name, new Uint8Array(arrayBuffer));
-      for (let ext in metaBlobMap) {
-        formData.append(`metadata:${ext}`, metaBlobMap[ext]);
-      }
-      console.log(2);
-
-      // Fake endpoint - replace with your actual server upload URL
-      const uploadUrl = buildURL("/upload", {[QUERY_ALBUM]: gAlbum});
-
-      // Setup XHR
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', uploadUrl, true);
-
-      // Track upload progress
-      let lastLoaded = 0;
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const percent = Math.floor((event.loaded / event.total) * 100);
-          setUploadProgress(percent);
-
-          // Send delta back
-          ondelta(event.loaded - lastLoaded);
-          lastLoaded = event.loaded;
-        }
-      };
-
-      // On load (finished)
-      xhr.onload = () => {
-        if (xhr.status === 200) {
-          // File uploaded successfully
-          resolve();
-        } else {
-          // Handle error
-          reject(new Error(xhr.status + ": " + xhr.response));
-        }
-        checkServer();
-      };
-
-      // On error
-      xhr.onerror = () => {
-        reject(new Error('Network error'));
-      };
-
-      // Send the file
-      xhr.send(formData);
-    });
-  }
-})();
-
-
-(() => { // DRAG HANDLING
-    
-  // Helper states
-  const dragIndicator = document.querySelector(".drag-indicator");
-  let dragCounter = 0; // track how many "dragenter" events
-  let dragStartedInternal = false; // to feign knowing it came from inside
-                  // simply leaving and reentering would make it seem from outside
-
-  function isDragFromOutside(event) {
-    
-    for (const item of event.dataTransfer.items) {
-      if (item.type === "text/uri-list") {
-        const url = event.dataTransfer.getData(item.type);
-        try {
-          // Parse the URL to extract its origin
-          const parsedUrl = new URL(url);
-          if (parsedUrl.origin === window.location.origin)
-            return false;
-        } catch (error) {
-          console.log(`Invalid URL: ${url}`);
-        }
-      }
-    }
-
-    return true;
-
-  }
-
-  function handleDragStart(event) {
-    dragStartedInternal = true;
-  }
-
-  function handleDragEnter(event) {
-    if(upload_processed) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    dragCounter++;
-
-    if (dragStartedInternal) return;
-
-    /* dragstart and drop has access to drop info
-    if (isDragFromOutside(event) === false)
-      return;
-    */
-
-    dragIndicator.style.display = '';
-  }
-
-  function handleDragOver(event) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-
-  function handleDragLeave(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    dragCounter--;
-
-    // If we are not in a nested drag area, hide the overlay
-    if (dragCounter === 0) {
-      dragIndicator.style.display = 'none';
-      dragStartedInternal = false;
-    }
-  }
-
-  function handleDrop(event) {
-    if(upload_processed) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    dragCounter = 0;
-    dragStartedInternal = false;
-
-    // Hide the overlay
-    dragIndicator.style.display = 'none';
-
-    const files = event.dataTransfer.files;
-    if (files.length === 0) return;
-
-    if (isDragFromOutside(event) === false)
-      return;
-
-    // Upload each file in series or parallel (example: in series for clarity)
-    uploadFiles([...files]);
-  }
-
-  // Set up document-level event listeners for drag and drop
-  document.addEventListener('dragstart', handleDragStart);
-  document.addEventListener('dragenter', handleDragEnter);
-  document.addEventListener('dragover', handleDragOver);
-  document.addEventListener('dragleave', handleDragLeave);
-  document.addEventListener('drop', handleDrop);
-
-})();
 
 (() => { // SERVER STATUS
   const serverInfoContainer = document.querySelector(".server-info-container");
@@ -1783,6 +1575,18 @@ const mainWrap = document.body.querySelector(".main-wrap");
         body: JSON.stringify(args.map(String))
       })
     }
+  };
+
+  window.createImg = function(...classes) {
+    const img = createElement("img", ...classes);
+    img.onerror = function() {
+      if (img.getAttribute("data-type") === "audio")
+        img.src = DEFAULT_ARTWORK;
+      else
+        img.src = PLACEHOLDER_IMAGE;
+      img.onerror = null;
+    };
+    return img;
   };
 
 })();

@@ -95,7 +95,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	keyMap := make(map[string] struct{})
 	var base, crc32_0, crc32_1 string
 	strPtrMap := map[string] *string{
-		"base": &base,
 		"crc": &crc32_0,
 	}
 
@@ -131,6 +130,11 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 				logHTTPRequest(r, -1, "Keys not found:", strPtrMap)
 				http.Error(w, "Keys not found", http.StatusBadRequest)
 				return
+			}
+
+			if key == "file" {
+				base = part.FileName()
+				base = recursiveNewName(uploadDir, base)
 			}
 
 			// Upload files
@@ -222,11 +226,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 			*ptr = string(buf[:read])
 			delete(strPtrMap, key)
-
-			//
-			if key == "base" {
-				base = recursiveNewName(uploadDir, base)
-			}
 
 		}
 

@@ -12,12 +12,55 @@ package main
 import "C"
 import (
 	"unsafe"
+	"os"
+	"fmt"
 )
 
+func _executeFFmpeg(args []string, stdout, stderr *os.File) (<-chan struct{}, func() error, error) {
 
-func executeFFmpeg(command string) (string, error) {
+	cStdout := C.int(-1)
+	cStderr := C.int(-1)
 
-	command = "nice " + command // nice -n 10~19
+	if (stdout != nil) {
+		cStdout = C.int(stdout.Fd())
+	}
+	if (stderr != nil) {
+		cStderr = C.int(stderr.Fd())
+	}
+
+	// Call the C function
+	command := "nice " + joinCommandArgs(args) // nice -n 10~19
+	cCommand := C.CString(command)
+	defer C.free(unsafe.Pointer(cCommand))
+
+	pid := C.start_ffmpeg(cCommand, cStdout, cStderr)
+	if pid < 0 {
+		return nil, nil, fmt.Errorf("Failed to start ffmpeg process")
+	}
+
+	wait := make(chan struct{})
+	go func() {
+		C.wait_process(pid)
+		wait <-struct{}{}
+	}()
+
+	terminator := func() error {
+		r := C.terminate_process(pid, 1) // SIGKILL
+		if r != 0 {
+			return fmt.Errorf("Failed to kill ffmpeg")
+		}
+		return nil
+	}
+	
+	// TODO process exit code error handling
+	return wait, terminator, nil
+}
+
+
+
+func executeFFmpegPopen(args []string) (string, error) {
+
+	command := "nice " + joinCommandArgs(args) // nice -n 10~19
 
 	// Allocate a buffer for the output
 	output := make([]byte, 8192)
@@ -27,7 +70,7 @@ func executeFFmpeg(command string) (string, error) {
 	cCommand := C.CString(command)
 	defer C.free(unsafe.Pointer(cCommand))
 
-	C.execute_ffmpeg(cCommand, cOutput, C.size_t(len(output)))
+	C.execute_ffmpeg_popen(cCommand, cOutput, C.size_t(len(output)))
 	
 	// Ignore status code
 	/*status :=

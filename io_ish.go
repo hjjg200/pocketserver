@@ -9,9 +9,6 @@ import (
 	"time"
 	"sync"
 	"os"
-	"path/filepath"
-	"encoding/json"
-	"strings"
 	"io/fs"
 )
 
@@ -26,14 +23,14 @@ const ioReadFileCacheSizeLimit = 32768
 
 var ioReadDirMu sync.Mutex
 var ioReadDirTime = make(map[string] time.Time)
-var ioReadDirCacheMap = make(map[string] ioReadDirCache)
+var ioReadDirCacheMap = make(map[string] []ioDirEntry)
 func ioReadDir(path string) ([]fs.DirEntry, error) {
 	ioReadDirMu.Lock()
 	defer ioReadDirMu.Unlock()
 
 	if last, ok := ioReadDirTime[path]; ok && time.Since(last) < ioReadDirThrottle {
 		// Throttle read dir
-		return ioConvertToFSDirEntry(ioReadDirCacheMap[path].DirEntries), nil
+		return ioConvertToFSDirEntry(ioReadDirCacheMap[path]), nil
 	}
 	ioReadDirTime[path] = time.Now()
 
@@ -81,7 +78,7 @@ func ioReadDir(path string) ([]fs.DirEntry, error) {
 	}
 
 	// Save cache
-	newCache := ioReadDirCache{ Path: path, DirEntries: entries }
+	ioReadDirCacheMap[path] = entries
 
 	return ioConvertToFSDirEntry(entries), nil
 
@@ -95,10 +92,6 @@ func ioConvertToFSDirEntry(entries []ioDirEntry) []fs.DirEntry {
     return dirEntries
 }
 
-type ioReadDirCache struct {
-	Path		string			`json:"path"`
-	DirEntries	[]ioDirEntry	`json:"dirEntries"`
-}
 
 // Cache ReadFile
 var ioReadFileCache = NewLRUCache[string, []byte](ioReadFileCacheCap, ioReadFileThrottle)

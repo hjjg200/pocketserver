@@ -91,8 +91,9 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
     |`x264->x265`   |❌❌|✅✅|✅✅||
     |`vp9->x265`    |❌❌|❌✅|❌✅|yt-dlp|
     |`hevc->x265`   |❌❌|❌✅|❌✅||
-    |`aac->aac`     |✅❌[^4]|✅⬜|✅⬜|Sound check during upload|
-    |`mp3->aac`     |✅⬜|✅⬜|✅⬜||
+    |`aac->aac`     |✅⬜|✅⬜|✅⬜|Sound check during upload|
+    |`mp3->aac`     |✅⬜|✅⬜|✅⬜|Sound check|
+    |`opus->aac`    |✅⬜|⬜⬜|⬜⬜|Sound check|
     |`aac->wav`     |✅⬜|✅⬜|✅⬜||
     |`mp3->wav`     |✅⬜|✅⬜|✅⬜||
     |`opus->wav`    |✅⬜|✅⬜|✅⬜||
@@ -106,23 +107,18 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
     [^1]: windows amd64 chrome 131 24 threads
     [^2]: iOS safari a14 bionic
     [^3]: windows amd64 firefox 134 24 threads
-    [^4]: possibly due to album art embedding
 
 
 
 ## TODO
 
 - priority
-    - api.json
-    - upload metadata during upload time
-    - let http client do ffmpeg tasks for nonexistent metadata (increase channel buffer size)
-    - sound check audio files (parallel exec)
-    - use multiple websocket for parallel ffmpeg
-    - on ffmepg fail, delegate to ffmpeg first found in PATH that is not itself
-    - on iSH ffmpeg wasm is priortized over native ffmpeg, on non-iSH opposite way
+    - sound check audio files
+- delegate to native ffmpeg that is first found in PATH and that is not pocketserver
+    - on websocket ffmpeg error
+    - when input size is over 2GB
 - FFmpeg piping (iSH <-> ffmpeg.wasm)
     - memory leak check
-    - video compressor
     - ...
 - Reload images src when non-cache fetch finished
 - log functions fix argument handling
