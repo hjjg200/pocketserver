@@ -10,7 +10,7 @@ import (
 	"runtime"
 )
 
-func _executeFFmpeg(args []string, stdout, stderr *os.File) (<-chan struct{}, func() error, error) {
+func _executeFFmpeg(args []string, stdout, stderr *ioFile) (<-chan struct{}, func() error, error) {
 
 	command := joinCommandArgs(args)
 	var cmd *exec.Cmd

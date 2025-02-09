@@ -30,7 +30,7 @@ func initFFmpeg() {
 
 		err := subFFmpeg(os.Args)
 		if err != nil {
-			err = executeFFmpeg(os.Args, os.Stdout, os.Stderr)
+			err = executeFFmpeg(os.Args, ioFromOsFile(os.Stdout), ioFromOsFile(os.Stderr))
 			if err != nil {
 				logFatal(err)
 			}
@@ -44,7 +44,7 @@ func initFFmpeg() {
 
 var ffmpegSempahore = NewSemaphore(PERF_FFMPEG_MAX_CONCURRENT, 0)
 // Find the native ffmpeg and run it
-func executeFFmpeg(args []string, stdout, stderr *os.File) (error) {
+func executeFFmpeg(args []string, stdout, stderr *ioFile) (error) {
 
 	ffmpegSempahore.Acquire()
 	defer ffmpegSempahore.Release()
@@ -59,8 +59,41 @@ func executeFFmpeg(args []string, stdout, stderr *os.File) (error) {
 	}
 	args[0] = native
 	if arg0 == "ffmpeg" {
+
 		// ffprobe doesn't receive -y, use -y for ffmpeg only
 		args = append([]string{args[0], "-y"}, args[1:]...)
+
+	} else if arg0 == "ffprobe" {
+
+		// Handle -o option for older version of ffprobe that doesn't have -o (iSH one doesn't)
+		var outputPath string
+		newArgs := make([]string, 0, len(args))
+
+		for i := 0; i < len(args); i++ {
+			if args[i] == "-o" {
+				// Ensure there is a following argument
+				if i+1 >= len(args) {
+					return fmt.Errorf("No output path provided for ffprobe: %v", args)
+				}
+				outputPath = args[i+1] // Get the output path
+				i++ // Skip next arg since it's the output file
+			} else {
+				newArgs = append(newArgs, args[i])
+			}
+		}
+
+		// if output option is found
+		if outputPath != "" {
+			// Priortize over the given stdout
+			out, err := ioOpenFile(outputPath, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0644)
+			if err != nil {
+				return fmt.Errorf("Failed to create output file for ffprobe: %s %w", outputPath, err)
+			}
+			stdout = out
+			defer out.Close()
+			args = newArgs
+		}
+
 	}
 
 	// Make the ffmpeg to be terminated if no stderr for 60 seconds

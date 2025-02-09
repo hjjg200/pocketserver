@@ -114,11 +114,6 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 ## TODO
 
 - -af "volume=2dB" -c:a copy
-- iSH io
-    - Use cgo 
-    - os.Stat
-    - os.WriteFile os.ReadFile os.Read os.Create
-    - os.Open
 - gMutablePlaylist
 - priority
     - sound check audio files
@@ -127,12 +122,10 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
     - when input size is over 2GB
 - FFmpeg piping (iSH <-> ffmpeg.wasm)
     - memory leak check
+        - Brave freezes at the 31st audio file when uploading 31+ audio files
     - ...
-- os.WriteFile sleep, ffmpeg sleep in iSH
-    - multiple ffmpeg serverside bake stress test
 - Ignore duplicate checkbox
 - The fetch call for list is not killed when album is changed
-- Brave freezes at the 31st audio file when uploading 31+ audio files
 - Reload images src when non-cache fetch finished
 - log functions fix argument handling
 - playlist loop single song

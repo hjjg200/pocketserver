@@ -12,11 +12,10 @@ package main
 import "C"
 import (
 	"unsafe"
-	"os"
 	"fmt"
 )
 
-func _executeFFmpeg(args []string, stdout, stderr *os.File) (<-chan struct{}, func() error, error) {
+func _executeFFmpeg(args []string, stdout, stderr *ioFile) (<-chan struct{}, func() error, error) {
 
 	cStdout := C.int(-1)
 	cStderr := C.int(-1)

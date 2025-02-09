@@ -913,7 +913,7 @@ type TimeoutPipe struct {
 // and sends a timeout signal if no data is read within `timeout`. It returns:
 //  - timeoutChan (read-only) → Receives a signal when a timeout occurs.
 //  - writer (write-end of the pipe) → Where data should be written.
-func makeTimeoutPipe(redirect io.Writer, timeout time.Duration) (timeoutChan <-chan struct{}, writer *os.File, err error) {
+func makeTimeoutPipe(redirect io.Writer, timeout time.Duration) (timeoutChan <-chan struct{}, writer *ioFile, err error) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		return nil, nil, err
@@ -930,7 +930,7 @@ func makeTimeoutPipe(redirect io.Writer, timeout time.Duration) (timeoutChan <-c
 	// Start monitoring the read-end of the pipe.
 	go tp.monitor()
 
-	return tp.timeoutChan, w, nil
+	return tp.timeoutChan, ioFromOsFile(w), nil
 }
 
 // monitor continuously reads from the pipe and writes to the redirect writer.

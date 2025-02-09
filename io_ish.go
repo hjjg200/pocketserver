@@ -194,6 +194,10 @@ type ioFile struct {
 	cFd C.int
 }
 
+func ioFromOsFile(f *os.File) *ioFile {
+	return &ioFile{C.int(f.Fd())}
+}
+
 // ioOpenFile mimics os.OpenFile using C.open.
 // It takes a path, flags, and mode, and returns an ioFile.
 // Example function that mimics os.OpenFile using our fixed wrapper.
@@ -210,6 +214,10 @@ func ioOpenFile(path string, flag int, mode os.FileMode) (*ioFile, error) {
 		return nil, syscall.Errno(C.get_errno())
 	}
 	return &ioFile{cFd: fd}, nil
+}
+
+func (f *ioFile) Fd() uintptr {
+	return uintptr(f.cFd)
 }
 
 // Write calls C.write on the underlying file descriptor.

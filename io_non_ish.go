@@ -20,9 +20,40 @@ func ioWriteFile(path string, data []byte, mode os.FileMode) error {
 func ioStat(path string) (fs.FileInfo, error) {
 	return os.Stat(path)
 }
-func ioOpen(path string) (*os.File, error) {
-	return os.Open(path)
+func ioOpen(path string) (*ioFile, error) {
+	return ioOpenFile(path, os.O_RDONLY, 0)
 }
-func ioOpenFile(path string, flag int, mode os.FileMode) (*os.File, error) {
-	return os.OpenFile(path, flag, mode)
+func ioOpenFile(path string, flag int, mode os.FileMode) (*ioFile, error) {
+	f, err := os.OpenFile(path, flag, mode)
+	if err != nil {
+		return nil, err
+	}
+	return &ioFile{f}, nil
+}
+
+
+type ioFile struct {
+	f *os.File
+}
+
+func ioFromOsFile(f *os.File) *ioFile {
+	return *ioFile{f}
+}
+func (f *ioFile) Fd() uintptr {
+	return f.f.Fd()
+}
+func (f *ioFile) Write(b []byte) (int, error) {
+	return f.f.Write(b)
+}
+func (f *ioFile) Read(b []byte) (int, error) {
+	return f.f.Read(b)
+}
+func (f *ioFile) Close() error {
+	return f.f.Close()
+}
+func (f *ioFile) Seek(offset int64, whence int) (int64, error) {
+	return f.f.Seek(offset, whence)
+}
+func (f *ioFile) Stat() (fs.FileInfo, error) {
+	return f.f.Stat()
 }
