@@ -30,6 +30,15 @@ func ioOpenFile(path string, flag int, mode os.FileMode) (*ioFile, error) {
 	}
 	return &ioFile{f}, nil
 }
+func ioRemove(path string) error {
+	return os.Remove(path)
+}
+func ioLstat(path string) (fs.FileInfo, error) {
+	return os.Lstat(path)
+}
+func ioReadlink(path string) (string, error) {
+	return os.Readlink(path)
+}
 
 
 type ioFile struct {
@@ -37,7 +46,7 @@ type ioFile struct {
 }
 
 func ioFromOsFile(f *os.File) *ioFile {
-	return *ioFile{f}
+	return &ioFile{f}
 }
 func (f *ioFile) Fd() uintptr {
 	return f.f.Fd()

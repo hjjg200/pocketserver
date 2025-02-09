@@ -297,7 +297,7 @@ func makeFFmpegHandler() http.HandlerFunc {
 
     // Clean up existing socket
     if _, err := ioStat(socketPath); err == nil {
-        os.Remove(socketPath)
+        ioRemove(socketPath)
     }
 
     listener, err := net.Listen("unix", socketPath)
@@ -655,7 +655,7 @@ func processFFmpegOutputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 
 		// Write output
 		outPath := formatFFmpegArgPath(ffargs, outIndex)
-		out, err := os.Create(outPath)
+		out, err := ioOpenFile(outPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
 			return fmt.Errorf("Failed to create output file: %s err: %w", outPath, err)
 		}

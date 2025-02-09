@@ -560,9 +560,11 @@ class ProgressTask {
 };
 
 
-function parseFilename(base) {
+function parseFilename(path) {
+  path = path.split("/");
+  const base = path.pop();
   const splits = base.split(".");
   const ext = `.${splits.pop()}`;
   const stem = splits.join(".");
-  return [stem, ext];
+  return [base, stem, ext];
 }

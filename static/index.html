@@ -582,30 +582,8 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
     //
     container.update = async (meta) => {
-      const txtMeta = buildURL(src, {[QUERY_METADATA]: EXT_META_TEXT});
-      let details = {};
-      gPlaylistMetadata[basename] = details;
-
-      try {
-        const response = await fetch(txtMeta);
-        details = ffmpegProcessTextMetadata(await response.json());
-      } catch {}
-
-      // If malformed metadata
-      if (!details.duration) {
-        try {
-          // Request baking of metadata
-          await ffmpegServerSideBakeMetadata(gAlbum, basename, gMetadataBody.metaMap[basename].mimeType);
-          // Fetch again with refreshing cache
-          const response = await fetch(txtMeta, { cache: "reload" });
-          details = ffmpegProcessTextMetadata(await response.json());
-        } catch {
-          throw new Error(`Failed to get or bake metadata for ${basename} in ${album}`);
-        }
-      }
-
-      // ---
-      gPlaylistMetadata[basename] = details;
+      await populateAudioMetadata(basename);
+      let details = gPlaylistMetadata[basename];
 
       details.title = details.title || basename;
       details.artist = details.artist || "-";
@@ -771,7 +749,8 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
   window.populateList = async function (cached=true) {
 
-    let url = buildURL(URL_LIST, {[QUERY_ALBUM]: gAlbum});
+    const requestedAlbum = gAlbum;
+    let url = buildURL(URL_LIST, {[QUERY_ALBUM]: requestedAlbum});
     if (cached) {
       url = buildURL(url, {[QUERY_CACHE]: null});
     }
@@ -779,14 +758,15 @@ const mainWrap = document.body.querySelector(".main-wrap");
     const response = await fetch(url);
     const metaBody = await response.json();
 
+    // TODO better handling of album change than this
+    if (gAlbum !== requestedAlbum) return;
+
     await updateList(metaBody);
 
-    // TODO remove folder count from others
-    const numAudio = Object.values(metaBody.metaMap).filter(v => splitMimeType(v.mimeType)[0] === "audio").length;
-    
     totalSizeInfo.textContent = formatAlbumInfo(metaBody.metaMap);
 
     // Adjust music player
+    const numAudio = Object.values(metaBody.metaMap).filter(v => splitMimeType(v.mimeType)[0] === "audio").length;
     musicPlayerContainer.classList[(numAudio > 0) ? "remove":"add"]("no-songs");
 
   };
@@ -810,8 +790,8 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
   const gAudio = document.querySelector(".music-player audio");
 
-  window.gPlaylist = [];
-  window.gPlaylistMetadata = {};
+  window.gPlaylist = null;
+  window.gPlaylistMetadata = null;
   window.gAudioCurrentBase = null;
   let gAudioSeed = null;
   let gMutablePlaylist = null;
@@ -821,16 +801,25 @@ const mainWrap = document.body.querySelector(".main-wrap");
   const mediaActionHandlers = {
     play: async () => {
       if (gAudioCurrentBase == null) {
-        await changeMusic(gPlaylist[0]);
+        const albumAudioInfo = getAlbumAudioInfo();
+        if (albumAudioInfo) {
+          if (gPlaylist.indexOf(albumAudioInfo.base) !== -1) {
+            await changeMusic(albumAudioInfo.base);
+            gAudio.currentTime = albumAudioInfo.currentTime || 0;
+          }
+        }
         return;
       }
-      await gAudio.play();
+      try {
+        await gAudio.play();
+      } catch {}
       musicPlayer.classList.add("playing");
 
       navigator.mediaSession.playbackState = "playing";
 
       // Save audio info for later restore
       storeAudioInfo();
+      updateMediaSessionPosition();
     },
     pause: async () => {
       gAudio.pause();
@@ -878,13 +867,17 @@ const mainWrap = document.body.querySelector(".main-wrap");
     const audioInfo = JSON.parse(localStorage.getItem(LC_AUDIO_JSON) || "{}");
     audioInfo[gAlbum] = { 
       base: gAudioCurrentBase,
-      seed: gAudioSeed
+      seed: gAudioSeed,
+      currentTime: gAudio.currentTime || 0
     };
     localStorage.setItem(LC_AUDIO_JSON, JSON.stringify(audioInfo));
   }
+  setInterval(storeAudioInfo, 5000);
   window.initializeAudio = async function() {
 
     window.gPlaylist = gMetadataBody.playlist;
+    window.gPlaylistMetadata = {};
+    gMutablePlaylist = gPlaylist.slice();
 
     // Create a map of elements for quick lookup
     const elementMap = new Map();
@@ -900,27 +893,25 @@ const mainWrap = document.body.querySelector(".main-wrap");
       }
     }
 
-    // TODO when paused, file upload causes focusing of current music
     // Restore session
-    if (gAudio.paused) {
-      const audioInfoJson = localStorage.getItem(LC_AUDIO_JSON);
-      if (audioInfoJson) {
-        const audioInfo = JSON.parse(audioInfoJson);
-        const albumAudioInfo = audioInfo[gAlbum];
-        if (albumAudioInfo) {
-          gAudioSeed = albumAudioInfo.seed || null;
-          gMutablePlaylist = shuffleArray(gPlaylist, gAudioSeed);
-
-          if (gPlaylist.indexOf(albumAudioInfo.base) !== -1) {
-            await changeMusic(albumAudioInfo.base);
-            await mediaActionHandlers["pause"]();
-          }
-        }
-      }
+    const albumAudioInfo = getAlbumAudioInfo();
+    if (albumAudioInfo) {
+      // Get the seed of the shuffle and shuffle it
+      gAudioSeed = albumAudioInfo.seed || null;
+      gMutablePlaylist = shuffleArray(gPlaylist, gAudioSeed);
     }
 
     //
     musicPlayerShuffleButton.classList[gAudioSeed !== null ? "add" : "remove"]("on");
+  }
+
+  function getAlbumAudioInfo() {
+    const audioInfoJson = localStorage.getItem(LC_AUDIO_JSON);
+    if (audioInfoJson) {
+      const audioInfo = JSON.parse(audioInfoJson);
+      return audioInfo[gAlbum];
+    }
+    return null;
   }
   
   // MUSIC PLAYER
@@ -948,6 +939,45 @@ const mainWrap = document.body.querySelector(".main-wrap");
     }
   });
   
+  window.populateAudioMetadata = async function (basename) {
+    
+    const src     = buildURL([URL_VIEW, basename], {[QUERY_ALBUM]: gAlbum});
+    const txtMeta = buildURL(src, {[QUERY_METADATA]: EXT_META_TEXT});
+    
+    //
+    if (!gPlaylistMetadata) {
+      gPlaylistMetadata = {};
+    }
+
+    //
+    if (gPlaylistMetadata[basename])
+      return;
+
+    let details = {};
+    gPlaylistMetadata[basename] = details;
+
+    try {
+      const response = await fetch(txtMeta);
+      details = ffmpegProcessTextMetadata(await response.json());
+    } catch {}
+
+    // If malformed metadata
+    if (!details.duration) {
+      try {
+        // Request baking of metadata
+        await ffmpegServerSideBakeMetadata(gAlbum, basename, gMetadataBody.metaMap[basename].mimeType);
+        // Fetch again with refreshing cache
+        const response = await fetch(txtMeta, { cache: "reload" });
+        details = ffmpegProcessTextMetadata(await response.json());
+      } catch {
+        throw new Error(`Failed to get or bake metadata for ${basename} in ${album}`);
+      }
+    }
+
+    // ---
+    gPlaylistMetadata[basename] = details;
+  }
+
   window.changeMusic = async function (base) {
     
     if (base === null) {
@@ -983,9 +1013,13 @@ const mainWrap = document.body.querySelector(".main-wrap");
     ensureLiVisibility(musicPlaylist, li1);
 
     //
-    await mediaActionHandlers["pause"]();
+    if (!gAudio.paused) {
+      await mediaActionHandlers["pause"]();
+    }
     
-    const details = gPlaylistMetadata[base] || {};
+    // Get details
+    await populateAudioMetadata(base);
+    const details = gPlaylistMetadata[base];
     if (details.title === "") {
       details.title = base;
     }
@@ -998,7 +1032,10 @@ const mainWrap = document.body.querySelector(".main-wrap");
       musicPlayerArtContainer.querySelectorAll("img").forEach(img => {img.src = thumb});
       updateMusicArtBackground();
 
-      await fetch("/ping"); // Ensure the server is up
+      if ((await fetch("/ping")).status !== 200) {
+        // Ensure the server is up
+        throw new Error("Non 200");
+      }
       gAudio.src = src;
 
     }, 5000);
@@ -1006,9 +1043,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
     try {
       await audioRetryHandle.promise;
       await mediaActionHandlers["play"]();
-      updateMediaSessionPosition();
     } catch(err) {
-      console.error("Failed to play", src, err);
       return;
     }
 
@@ -1037,9 +1072,8 @@ const mainWrap = document.body.querySelector(".main-wrap");
     }
     gAudio.currentTime = gAudio.duration * frac;
   }, (updater) => {
-    gAudio.addEventListener("timeupdate", () => {
-      updater(gAudio.currentTime / gAudio.duration);
-    });
+    gAudio.addEventListener("loadedmetadata", () => updater(gAudio.currentTime / gAudio.duration));
+    gAudio.addEventListener("timeupdate", () => updater(gAudio.currentTime / gAudio.duration));
   });
 
   const gAudioPrevButton = document.querySelector(".music-player .prev");

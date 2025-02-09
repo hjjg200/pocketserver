@@ -630,7 +630,7 @@ func getInternetInterface() (string, error) {
 func resolveSymlink(fullpath string) (string) {
 
 	// Check if the file exists and is executable
-	info, err := os.Lstat(fullpath)
+	info, err := ioLstat(fullpath)
 	if err != nil {
 		return fullpath
 	}
@@ -640,7 +640,7 @@ func resolveSymlink(fullpath string) (string) {
 		return fullpath
 	}
 		
-	target, err := os.Readlink(fullpath)
+	target, err := ioReadlink(fullpath)
 	if err != nil {
 		return fullpath
 	}

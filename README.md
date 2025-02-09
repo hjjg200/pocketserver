@@ -113,6 +113,7 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 
 ## TODO
 
+- Readlink Lstat
 - -af "volume=2dB" -c:a copy
     - save gain to metadata
     - write to /tmp/pocketserver_ish/{crc of fullpath}.ext
@@ -127,7 +128,6 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
         - Brave freezes at the 31st audio file when uploading 31+ audio files
     - ...
 - Ignore duplicate checkbox
-- The fetch call for list is not killed when album is changed
 - Reload images src when non-cache fetch finished
 - log functions fix argument handling
 - playlist loop single song

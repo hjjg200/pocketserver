@@ -570,7 +570,7 @@ window.ffmpegSoundCheck = new ProgressTask(async function(inputFile, targetLUFS 
     });
   }
   try {
-    const [inputStem, inputExt] = parseFilename(inputFile.name);
+    const [inputBase, inputStem, inputExt] = parseFilename(inputFile.name);
     const inputFileName = `input${inputExt}`;
     const tempCorrectedFile = "tempCorrected.m4a";
     const finalOutputFile = "finalOutput.m4a";

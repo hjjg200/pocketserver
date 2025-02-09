@@ -6,7 +6,6 @@ package main
 import (
 	"os/exec"
 	"fmt"
-	"os"
 	"runtime"
 )
 

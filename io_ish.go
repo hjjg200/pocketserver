@@ -6,6 +6,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 	//"sync"
 	"os"
@@ -399,4 +400,61 @@ func ioReadDir(path string) ([]fs.DirEntry, error) {
 		entries = append(entries, entry)
 	}
 	return entries, nil
+}
+
+// ioRemove mimics os.Remove by calling the C remove function.
+func ioRemove(path string) error {
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+
+	// Call C.remove to delete the file (or empty directory).
+	if res := C.remove(cPath); res != 0 {
+		return syscall.Errno(C.get_errno())
+	}
+	return nil
+}
+
+// ioLstat mimics os.Lstat by calling C.lstat (which does not follow symlinks)
+// and returns an fs.FileInfo (ioDirEntry) for the file.
+func ioLstat(path string) (fs.FileInfo, error) {
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+
+	var stat C.struct_stat
+	ret := C.lstat(cPath, &stat)
+	if ret != 0 {
+		return nil, syscall.Errno(C.get_errno())
+	}
+	modTime := time.Unix(int64(stat.st_mtim.tv_sec), int64(stat.st_mtim.tv_nsec))
+	entry := &ioDirEntry{
+		FName:    path,
+		FSize:    int64(stat.st_size),
+		FMode:    fs.FileMode(stat.st_mode),
+		FModTime: modTime,
+		FIsDir:   (stat.st_mode & C.S_IFDIR) != 0,
+	}
+	return entry, nil
+}
+
+// ioReadlink mimics os.Readlink by calling C.readlink to retrieve the target of a symlink.
+func ioReadlink(path string) (string, error) {
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+
+	// Allocate a buffer for the link target.
+	const bufSize = 4096
+	buf := C.malloc(C.size_t(bufSize))
+	if buf == nil {
+		return "", fmt.Errorf("ioReadlink: failed to allocate buffer")
+	}
+	defer C.free(buf)
+
+	// Cast buf to *C.char when calling readlink.
+	n := C.readlink(cPath, (*C.char)(buf), C.size_t(bufSize))
+	if n < 0 {
+		return "", syscall.Errno(C.get_errno())
+	}
+
+	// readlink does not null-terminate, so use the returned length.
+	return string(C.GoBytes(buf, C.int(n))), nil
 }
