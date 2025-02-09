@@ -45,14 +45,14 @@
       </div>
 
       <div class="upload-info-container" style="display: none;">
-        <div class="file-no">1 of 1</div>
-        <div class="file-name">asdasd.jpg</div>
+        <div class="file-no"></div>
+        <div class="file-name"></div>
         <div class="progress-bar-bg">
           <div class="progress-bar"></div>
         </div>
         <div class="progress-info">
-          <span class="speed">12.34 MB/s</span>
-          <span class="time">00:04</span>
+          <span class="speed"></span>
+          <span class="time">-</span>
         </div>
       </div>
 
@@ -168,6 +168,7 @@ document.addEventListener("DOMContentLoaded", () => {
     {
       "input": 2,
       "output": 11,
+      "required": true,
       "outputExt": EXT_META_TEXT,
       "outputMimeType": "application/json",
       "mimeTypes": ["audio/*", "video/*", "*/webp"],
@@ -596,7 +597,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
           // Request baking of metadata
           await ffmpegServerSideBakeMetadata(gAlbum, basename, gMetadataBody.metaMap[basename].mimeType);
           // Fetch again with refreshing cache
-          const response = await fetch(txtMeta, { cache: "no-store" });
+          const response = await fetch(txtMeta, { cache: "reload" });
           details = ffmpegProcessTextMetadata(await response.json());
         } catch {
           throw new Error(`Failed to get or bake metadata for ${basename} in ${album}`);

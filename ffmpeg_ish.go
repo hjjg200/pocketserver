@@ -28,12 +28,37 @@ func _executeFFmpeg(args []string, stdout, stderr *os.File) (<-chan struct{}, fu
 		cStderr = C.int(stderr.Fd())
 	}
 
+	//
+	args = append([]string{"nice"}, args...)
+    cArgs := make([]*C.char, len(args)+1) // +1 for NULL termination
+    for i, arg := range args {
+        cArgs[i] = C.CString(arg)
+    }
+    cArgs[len(args)] = nil // Null terminate
+
+    // Convert Go slice to C array
+    cArgPtr := (**C.char)(unsafe.Pointer(&cArgs[0]))
+	defer func() {
+		for _, cStr := range cArgs {
+			C.free(unsafe.Pointer(cStr))
+		}
+	}()
+
+    // Free allocated C strings
+
+	/*
 	// Call the C function
 	command := "nice " + joinCommandArgs(args) // nice -n 10~19
 	cCommand := C.CString(command)
 	defer C.free(unsafe.Pointer(cCommand))
 
 	pid := C.start_ffmpeg(cCommand, cStdout, cStderr)
+	if pid < 0 {
+		return nil, nil, fmt.Errorf("Failed to start ffmpeg process")
+	}
+	*/
+
+	pid := C.start_ffmpeg(cArgPtr, cStdout, cStderr)
 	if pid < 0 {
 		return nil, nil, fmt.Errorf("Failed to start ffmpeg process")
 	}

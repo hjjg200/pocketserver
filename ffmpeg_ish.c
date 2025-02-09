@@ -42,7 +42,7 @@ int execute_ffmpeg_popen(const char *cmd, char *output, size_t output_size) {
 
 // Start ffmpeg (or another program) with the given command string and optional
 // stdout/stderr redirection. Returns the child's PID on success, or -1 on error.
-pid_t start_ffmpeg(const char *cmd, int stdout_fd, int stderr_fd) {
+pid_t start_ffmpeg(char *const args[], int stdout_fd, int stderr_fd) {
     // Fork a new process
     pid_t pid = fork();
     if (pid < 0) {
@@ -66,9 +66,10 @@ pid_t start_ffmpeg(const char *cmd, int stdout_fd, int stderr_fd) {
             }
         }
 
+        /**
         // Tokenize the cmd string into args for execvp()
         char *args[128];
-        char cmd_copy[1024];
+        char cmd_copy[4096];
         snprintf(cmd_copy, sizeof(cmd_copy), "%s", cmd);
 
         int i = 0;
@@ -80,6 +81,9 @@ pid_t start_ffmpeg(const char *cmd, int stdout_fd, int stderr_fd) {
         args[i] = NULL;  // Null-terminate the argument list
 
         // Execute the command
+        execvp(args[0], args);
+         */
+
         execvp(args[0], args);
 
         // If execvp() fails:

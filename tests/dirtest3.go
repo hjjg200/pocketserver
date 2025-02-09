@@ -80,6 +80,9 @@ func ReadDirectory(root string, chunkSize int, sleepDuration time.Duration) {
 }
 
 func main() {
+
+	runtime.GOMAXPROCS(1)
+	
 	if len(os.Args) < 4 {
 		log.Fatalln("Usage: go run main.go <path> <chunkSize> <sleepDurationMs>")
 	}

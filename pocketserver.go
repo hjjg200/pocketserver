@@ -8,7 +8,6 @@ import (
 	"hash/crc32"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"log"
 	"bufio"
 	"net"
@@ -87,7 +86,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	// Handling uploads
 	album := filepath.Base(r.URL.Query().Get(QUERY_ALBUM))
 	uploadDir := filepath.Join(gAppInfo.UploadDir, album)
-	metaDir := filepath.Join(gAppInfo.MetadataDir, album)
+	metaDir := filepath.Join(gAppInfo.MetadataDir, uploadDir)
 	fullpathFile := ""
 	fullpathProgress := ""
 	extInProgress := "." + fmt.Sprint(time.Now().Unix()) + ".inprogress"
@@ -150,7 +149,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, "Wrong formdata for upload", http.StatusBadRequest)
 					return
 				}
-				fullpath = filepath.Join(metaDir, uploadDir, base) + ext
+				fullpath = filepath.Join(metaDir, base) + ext
 
 			} else if key == "file" {
 				
@@ -202,7 +201,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			out.Close()
 			// ---
 			if key == "file" {
-				crc32_1 = fmt.Sprintf("%x", hasher.Sum32())
+				crc32_1 = fmt.Sprintf("%08x", hasher.Sum32())
 			}
 
 			logHTTPRequest(r, -1, base, key)
@@ -272,141 +271,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 
-
-func uploadHandler2(w http.ResponseWriter, r *http.Request) {
-
-	if r.Method != http.MethodPost {
-		logHTTPRequest(r, -1, "Invalid method for upload")
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-		return
-	}
-
-	mr, err := r.MultipartReader()
-	if err != nil {
-		logHTTPRequest(r, -1, "r.MultipartReader err:", err)
-		http.Error(w, "Cannot create multipart reader", http.StatusBadRequest)
-		return
-	}
-
-	hashHex0 := ""
-	hashHex1 := ""
-	fileCount := 0
-	fn := ""
-	fullpath := ""
-	fullpathUndone := ""
-	for {
-
-		part, err := mr.NextPart()
-
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			logHTTPRequest(r, -1, "mr.NextPart err:", err)
-			http.Error(w, "Error reading part", http.StatusBadRequest)
-			return
-		}
-		defer part.Close()
-
-		n := part.FormName()
-		if n == "hashHex" {
-		
-			p, err := ioutil.ReadAll(part)
-			if err != nil {
-				logHTTPRequest(r, -1, "ioutil.ReadAll err:", err)
-				http.Error(w, "Error reading part", http.StatusBadRequest)
-				return
-			}
-			hashHex0 = string(p)
-		
-		} else if part.FormName() == "file" {
-
-			if fileCount > 0 {
-				logHTTPRequest(r, -1, "Too many files")
-				http.Error(w, "Too many files", http.StatusBadRequest)
-				return
-			}
-
-			fileCount += 1
-
-			// Path for upload
-			dir := filepath.Join(
-				gAppInfo.UploadDir,
-				filepath.Base(r.URL.Query().Get(QUERY_ALBUM)),
-			)
-
-			// Generate a unique filename
-			fn = part.FileName()
-			fn = filepath.Base(fn)
-			fn = recursiveNewName(dir, fn)
-
-			fullpath = filepath.Join(dir, fn)
-			fullpathUndone = filepath.Join(dir, fn + fmt.Sprint(time.Now().Unix()) + ".inprogress")
-
-			// Create the file and hasher
-			hasher := crc32.NewIEEE()
-			out, err := os.Create(fullpathUndone)
-			if err != nil {
-				logHTTPRequest(r, -1, fullpathUndone, "os.Create err:", err)
-				http.Error(w, "Error creating file", http.StatusInternalServerError)
-				return
-			}
-
-			// Read the file in chunks
-			buffer := make([]byte, 8*1024*1024) // 8 MB chunks // TODO perf config
-			for {
-
-				bytesRead, err := part.Read(buffer)
-				if err != nil && err != io.EOF {
-					logHTTPRequest(r, -1, fullpathUndone, "part.Read err:", err)
-					http.Error(w, "Error reading from part", http.StatusInternalServerError)
-					out.Close()
-					return
-				}
-
-				if bytesRead == 0 {
-					break
-				}
-
-				// Update the hasher with the chunk
-				_, err = out.Write(buffer[:bytesRead])
-				if err != nil {
-					logHTTPRequest(r, -1, fullpathUndone, "out.Write err:", err)
-					http.Error(w, "Error writing to server", http.StatusInternalServerError)
-					out.Close()
-					return
-				}
-
-				hasher.Write(buffer[:bytesRead])
-
-			}
-
-			// Hash
-			out.Close()
-			hashHex1 = fmt.Sprint(hasher.Sum32())
-
-		}
-
-	}
-
-	// Check hash
-	if hashHex0 != hashHex1 {
-		logHTTPRequest(r, -1, fullpathUndone, "hashHex mismatch", hashHex0, hashHex1)
-		http.Error(w, "Hash doesn't match", http.StatusInternalServerError)
-		return
-	}
-
-	// Finalize
-	err = os.Rename(fullpathUndone, fullpath)
-	if err != nil {
-		logHTTPRequest(r, -1, fullpathUndone, "os.Rename err:", err)
-		http.Error(w, "Error changing name", http.StatusInternalServerError)
-		return
-	}
-
-	logHTTPRequest(r, -1, "UPLOAD", fn, hashHex1)
-
-}
 
 func editPlaylistHandler(w http.ResponseWriter, r *http.Request) {
 	
@@ -518,15 +382,12 @@ func checkNotModified(r *http.Request, mod time.Time) bool {
 func viewHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Specify the path to your file
-	base	 := filepath.Base(r.URL.Path)
-	query    := r.URL.Query()
-	album	 := query.Get(QUERY_ALBUM)
-	dir 	 := filepath.Join(
-		gAppInfo.UploadDir,
-		filepath.Base(album),
-	)
-	fullpath := filepath.Join(dir, base)
-	metaSuffix := query.Get(QUERY_METADATA)
+	base		:= filepath.Base(r.URL.Path)
+	query		:= r.URL.Query()
+	album		:= query.Get(QUERY_ALBUM)
+	dir			:= filepath.Join(gAppInfo.UploadDir, filepath.Base(album))
+	fullpath	:= filepath.Join(dir, base)
+	metaSuffix	:= query.Get(QUERY_METADATA)
 
 	if metaSuffix != "" {
 
@@ -837,21 +698,24 @@ func main() {
 	must(os.MkdirAll(gAppInfo.MetadataDir, 0755))
 
 	gMetadataManager = NewMetadataManager()
-	dentries, err := os.ReadDir(gAppInfo.UploadDir)
-	must(err)
-	dirs := []string{}
-	dirs = append(dirs, gAppInfo.UploadDir)
-	for _, dentry := range dentries {
-		if dentry.IsDir() {
-			dirs = append(dirs, filepath.Join(gAppInfo.UploadDir, dentry.Name()))
+	must(gMetadataManager.LoadDirCaches())
+	go func() {
+		dentries, err := os.ReadDir(gAppInfo.UploadDir)
+		must(err)
+		dirs := []string{}
+		dirs = append(dirs, gAppInfo.UploadDir)
+		for _, dentry := range dentries {
+			if dentry.IsDir() {
+				dirs = append(dirs, filepath.Join(gAppInfo.UploadDir, dentry.Name()))
+			}
 		}
-	}
-	for _, dir := range dirs {
-		gMetadataManager.AddDir(dir)
-		if err = gMetadataManager.UpdateDir(dir); err != nil {
-			logFatal(fmt.Errorf("Failed to cache dir %s: %w", dir, err))
+		for _, dir := range dirs {
+			gMetadataManager.AddDir(dir)
+			if err = gMetadataManager.UpdateDir(dir); err != nil {
+				logFatal(fmt.Errorf("Failed to cache dir %s: %w", dir, err))
+			}
 		}
-	}
+	}()
 
 	// IP
 	gAppInfo.LocalIPs = resolveLocalIPs()

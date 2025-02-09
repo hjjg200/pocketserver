@@ -730,7 +730,7 @@ func populateEmbedEtags() {
 				return fmt.Errorf("error reading file %s: %w", path, err)
 			}
 			// Compute and store ETag
-			etag = fmt.Sprintf("\"%x\"", getCRC32OfBytes(data))
+			etag = fmt.Sprintf("\"%08x\"", getCRC32OfBytes(data))
 
 		}
 

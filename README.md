@@ -25,6 +25,7 @@ sudo ln -s /usr/local/musl-1.2.5-i686/bin/musl-gcc /usr/local/bin/i686-linux-mus
 - ffmpeg is run using `popen` because I got invalid operation error using exec.Cmd.Run
 - using HTTP is recommended for better throughput
 - calling repeated ReadDir on mounted icloud drive causes freeze
+- using go native os functions for IO cause hang even when using 1 CPU (possibly due to syscall errors)
 
 ## Features
 
@@ -112,6 +113,13 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 
 ## TODO
 
+- -af "volume=2dB" -c:a copy
+- iSH io
+    - Use cgo 
+    - os.Stat
+    - os.WriteFile os.ReadFile os.Read os.Create
+    - os.Open
+- gMutablePlaylist
 - priority
     - sound check audio files
 - delegate to native ffmpeg that is first found in PATH and that is not pocketserver
@@ -120,6 +128,11 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 - FFmpeg piping (iSH <-> ffmpeg.wasm)
     - memory leak check
     - ...
+- os.WriteFile sleep, ffmpeg sleep in iSH
+    - multiple ffmpeg serverside bake stress test
+- Ignore duplicate checkbox
+- The fetch call for list is not killed when album is changed
+- Brave freezes at the 31st audio file when uploading 31+ audio files
 - Reload images src when non-cache fetch finished
 - log functions fix argument handling
 - playlist loop single song

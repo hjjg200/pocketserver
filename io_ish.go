@@ -9,6 +9,7 @@ import (
 	"time"
 	"sync"
 	"os"
+	"io"
 	"io/fs"
 )
 
@@ -47,7 +48,7 @@ func ioReadDir(path string) ([]fs.DirEntry, error) {
 	//
 	for {
 		chunk, err := file.ReadDir(ioReadDirChunkSize)
-		if err != nil && err != fs.ErrClosed {
+		if err != nil && err != fs.ErrClosed && err != io.EOF {
 			return nil, err
 		}
 

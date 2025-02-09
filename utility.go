@@ -692,12 +692,12 @@ func getCRC32OfFile(fullpath string) (string, error) {
 	defer f.Close()
 	hasher := crc32.NewIEEE()
 	io.Copy(hasher, f)
-	return fmt.Sprintf("%x", hasher.Sum32()), nil
+	return fmt.Sprintf("%08x", hasher.Sum32()), nil
 }
 
 func getCRC32OfBytes(data []byte) string {
 	crc32Hash := crc32.ChecksumIEEE(data)
-	return fmt.Sprintf("%x", crc32Hash)
+	return fmt.Sprintf("%08x", crc32Hash)
 }
 
 func mimeTypeByName(name string) string {
@@ -735,7 +735,7 @@ func joinCommandArgs(args []string) string {
 			// If the argument contains any whitespace or shell special characters,
 			// wrap it in single quotes. (This is a simple approach and may need to be
 			// adjusted if your arguments can be arbitrarily complex.)
-			if strings.IndexAny(arg, " \t\n'\"\\") != -1 {
+			if true || strings.IndexAny(arg, " \t\n'\"\\") != -1 {
 				// To include a single quote in a single-quoted POSIX string, the common trick is:
 				// ' → '\''  (i.e. end quote, escape a literal single quote, then restart quote)
 				safe := strings.ReplaceAll(arg, "'", `'\''`)

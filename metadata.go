@@ -154,10 +154,65 @@ func (mgr *MetadataManager) SetMetadata(dir, base string, info fs.FileInfo, crc 
 
 }
 
+func (mgr *MetadataManager) parseDirCacheName(jsonBase string) string {
+	jsonBase = strings.TrimSuffix(jsonBase, ".json")
+	return filepath.Join(strings.Split(jsonBase, META_SLASH_IN_FILENAME)...)
+}
+
 func (mgr *MetadataManager) formatDirCacheName(dir string) string {
 	dir = strings.ReplaceAll(dir, "/", META_SLASH_IN_FILENAME)
 	dir = strings.ReplaceAll(dir, "\\", META_SLASH_IN_FILENAME)
 	return filepath.Join(gAppInfo.MetadataDir, dir) + ".json"
+}
+
+func (mgr *MetadataManager) LoadDirCaches() error {
+
+	jsonPaths, err := filepath.Glob(filepath.Join(gAppInfo.MetadataDir, "*.json"))
+	if err != nil {
+		return err
+	}
+
+	for _, jsonPath := range jsonPaths {
+
+		dir := mgr.parseDirCacheName(filepath.Base(jsonPath))
+
+		mgr.AddDir(dir)
+		
+		err = func() error {
+
+			mgr.cacheMapMu.RLock()
+			defer mgr.cacheMapMu.RUnlock()
+		
+			cache, ok := mgr.cacheMap[dir]
+			if !ok {
+				panic("Cannot find cache for " + dir)
+			}
+
+			data, err := os.ReadFile(jsonPath)
+			if err != nil {
+				return err
+			}
+		
+			cache.bodyMu.Lock()
+			defer cache.bodyMu.Unlock()
+	
+			cache.json.Store(&data)
+			err = json.Unmarshal(data, &cache.body)
+			if err != nil {
+				return err
+			}
+
+			return nil
+
+		}()
+		if err != nil {
+			return err
+		}
+
+	}
+
+	return nil
+
 }
 
 func (mgr *MetadataManager) AddDir(dir string) {
@@ -166,7 +221,7 @@ func (mgr *MetadataManager) AddDir(dir string) {
 	defer mgr.cacheMapMu.Unlock()
 
 	if _, ok := mgr.cacheMap[dir]; ok {
-		logFatal(fmt.Errorf("Directory already exists in cache: %s", dir))
+		return
 	}
 
 	// Create new cache
@@ -183,16 +238,8 @@ func (mgr *MetadataManager) AddDir(dir string) {
 	cache.update = throttle(cache._update, IO_EACH_CACHE_COOLDOWN)
 	mgr.cacheMap[dir] = cache
 
-	data, err := os.ReadFile(mgr.formatDirCacheName(dir))
-	if err != nil {
-		return
-	}
-
-	cache.json.Store(&data)
-	err = json.Unmarshal(data, &cache.body)
-	if err != nil {
-		logFatal("Failed to read cached data for", dir)
-	}
+	// ---
+	must(os.MkdirAll(filepath.Join(gAppInfo.MetadataDir, dir), 0755))
 
 }
 

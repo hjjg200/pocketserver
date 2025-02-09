@@ -44,6 +44,7 @@
     uploadInfoContainer.style.display = '';
 
     const totalSize = files.reduce((acc, file) => acc + file.size, 0);
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
     try {
 

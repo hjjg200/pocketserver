@@ -363,8 +363,14 @@ window.ffmpegRunCommands = async function(blob, cmds) {
     let args = cmd.args.slice();
     args[cmd.input] = inputFileName;
     args[cmd.output] = "output" + cmd.outputExt;
-    await exec(args.slice(1));
-    ret[cmd.outputExt] = new Blob([await ffmpeg.readFile(args[cmd.output])], { type: cmd.outputMimeType });
+    try {
+      await exec(args.slice(1));
+      ret[cmd.outputExt] = new Blob([await ffmpeg.readFile(args[cmd.output])], { type: cmd.outputMimeType });
+    } catch (err) {
+      if (cmd.required === true) {
+        throw err;
+      }
+    }
   }
   return ret;
 };
@@ -471,27 +477,40 @@ async function correctLoudnessPass2(ffmpeg, wavFileName, outputFileName, analysi
     "linear=true",
     "print_format=json"
   ].join(":");
+  console.debug(pass2Filter);
   await ffmpeg.exec([
     "-i",
     wavFileName,
     "-af",
     pass2Filter,
+    "-vn",
     "-c:a",
     "aac",
-    "-c:v",
-    "mjpeg",
-    "-b:a",
-    "128k",
-    "-f",
-    "ipod",
+    "-q:a",
+    "1",
     "-threads",
     "1",
-    "-movflags",
-    "+faststart",
     outputFileName
   ]);
 }
 async function copyMetadataAndCover(ffmpeg, inputFileName, correctedFileName, finalFileName) {
+  const coverName = "cover.webp";
+  await ffmpeg.exec([
+    "-i",
+    inputFileName,
+    "-c:v",
+    "libwebp",
+    "-threads",
+    "1",
+    "-q:v",
+    "80",
+    "-pix_fmt",
+    "yuv420p",
+    "-an",
+    coverName
+  ]);
+  const ls = await ffmpeg.listDir("/");
+  const hasCover = ls.some((el) => el.name === coverName);
   await ffmpeg.exec([
     // 1) The audio file with corrected loudness
     "-i",
@@ -499,21 +518,28 @@ async function copyMetadataAndCover(ffmpeg, inputFileName, correctedFileName, fi
     // 2) The original file that has metadata and cover
     "-i",
     inputFileName,
+    // Handle album art only when the input had one
+    ...hasCover ? [
+      "-i",
+      coverName,
+      // Cover art (video stream #0) from the separate file, if present. 
+      "-map",
+      "2:v:0",
+      // Mark it as attached cover
+      "-disposition:v:0",
+      "attached_pic",
+      // Re-encode the cover to MJPEG
+      "-c:v",
+      "mjpeg"
+    ] : [
+      "-vn"
+    ],
     // Audio from the corrected file
     "-map",
     "0:a",
-    // Cover art (video stream #0) from the original, if present. The `?` makes it optional.
-    "-map",
-    "1:v:0?",
     // Copy (passthrough) the audio from the corrected file
     "-c:a",
     "copy",
-    // Re-encode the cover to MJPEG
-    "-c:v",
-    "mjpeg",
-    // Mark it as attached cover
-    "-disposition:v:0",
-    "attached_pic",
     // Copy all metadata from input #1 (original)
     "-map_metadata",
     "1",
@@ -526,6 +552,10 @@ async function copyMetadataAndCover(ffmpeg, inputFileName, correctedFileName, fi
     // Prevent chrome freeze when embedding album art
     "-threads",
     "1",
+    //
+    "-f",
+    "mp4",
+    //
     "-movflags",
     "+faststart",
     finalFileName
@@ -539,23 +569,29 @@ window.ffmpegSoundCheck = new ProgressTask(async function(inputFile, targetLUFS 
       console[event.type === "stderr" ? "warn" : "log"](event.message);
     });
   }
-  const [inputStem, inputExt] = parseFilename(inputFile.name);
-  const inputFileName = `input${inputExt}`;
-  const tempCorrectedFile = "tempCorrected.m4a";
-  const finalOutputFile = "finalOutput.m4a";
-  this.done("Writing input file to FS...");
-  await ffmpeg.writeFile(inputFileName, await fetchFile(inputFile));
-  this.done("Analyzing loudness (pass 1)...");
-  const analysis = await analyzeLoudnessPass1(ffmpeg, inputFileName, targetLUFS);
-  this.done("Pass 1 analysis:", analysis);
-  this.done("Correcting loudness (pass 2)...");
-  await correctLoudnessPass2(ffmpeg, inputFileName, tempCorrectedFile, analysis, targetLUFS);
-  this.done("Merging metadata & cover art...");
-  await copyMetadataAndCover(ffmpeg, inputFileName, tempCorrectedFile, finalOutputFile);
-  this.done("Reading final file...");
-  const finalData = await ffmpeg.readFile(finalOutputFile);
-  this.done("Sound check complete");
-  return new File([finalData.buffer], `${inputStem}.m4a`, { type: "audio/mp4" });
+  try {
+    const [inputStem, inputExt] = parseFilename(inputFile.name);
+    const inputFileName = `input${inputExt}`;
+    const tempCorrectedFile = "tempCorrected.m4a";
+    const finalOutputFile = "finalOutput.m4a";
+    this.done("Writing input file to FS...");
+    await ffmpeg.writeFile(inputFileName, await fetchFile(inputFile));
+    this.done("Analyzing loudness (pass 1)...");
+    const analysis = await analyzeLoudnessPass1(ffmpeg, inputFileName, targetLUFS);
+    this.done("Pass 1 analysis:", analysis);
+    this.done("Correcting loudness (pass 2)...");
+    await correctLoudnessPass2(ffmpeg, inputFileName, tempCorrectedFile, analysis, targetLUFS);
+    this.done("Merging metadata & cover art...");
+    await copyMetadataAndCover(ffmpeg, inputFileName, tempCorrectedFile, finalOutputFile);
+    this.done("Reading final file...");
+    const finalData = await ffmpeg.readFile(finalOutputFile);
+    this.done("Sound check complete");
+    return new File([finalData.buffer], `${inputStem}.m4a`, { type: "audio/mp4" });
+  } catch (err) {
+    throw err;
+  } finally {
+    ffmpeg.terminate();
+  }
 });
 window.ffmpegGetMetadata = async (buf, contentType) => {
   const metadata = {};
