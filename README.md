@@ -114,6 +114,8 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 ## TODO
 
 - -af "volume=2dB" -c:a copy
+    - save gain to metadata
+    - write to /tmp/pocketserver_ish/{crc of fullpath}.ext
 - gMutablePlaylist
 - priority
     - sound check audio files
