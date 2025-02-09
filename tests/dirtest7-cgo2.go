@@ -1,20 +1,4 @@
-// +build linux,386
-// linux and 386
-// build for iSH
-
-
 package main
-
-import (
-	"time"
-	//"sync"
-	"os"
-	"io"
-	"io/fs"
-	"path/filepath"
-	"syscall"
-	"unsafe"
-)
 
 /*
 #include <stdlib.h>
@@ -35,159 +19,38 @@ int my_open(const char *pathname, int flags, mode_t mode) {
 }
 */
 import "C"
+import (
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"syscall"
+	"time"
+	"unsafe"
+)
 
-// ish 32 chunk 30 ms
-
-const ioReadDirChunkSize = 32
-const ioReadDirChunkThrottle = time.Millisecond * 30
-const ioReadDirThrottle = time.Second * 10
-const ioReadFileThrottle = ioReadDirThrottle
-const ioReadFileCacheCap = 100
-const ioReadFileCacheSizeLimit = 32768
-
-/*
-var ioReadDirMu sync.Mutex
-var ioReadDirTime = make(map[string] time.Time)
-var ioReadDirCacheMap = make(map[string] []ioDirEntry)
-func ioReadDirDEP(path string) ([]fs.DirEntry, error) {
-	ioReadDirMu.Lock()
-	defer ioReadDirMu.Unlock()
-
-	if last, ok := ioReadDirTime[path]; ok && time.Since(last) < ioReadDirThrottle {
-		// Throttle read dir
-		return ioConvertToFSDirEntry(ioReadDirCacheMap[path]), nil
-	}
-	ioReadDirTime[path] = time.Now()
-
-	// Entries
-	entries := make([]ioDirEntry, 0)
-
-	// Open dir
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	
-	//
-	for {
-		chunk, err := file.ReadDir(ioReadDirChunkSize)
-		if err != nil && err != fs.ErrClosed && err != io.EOF {
-			return nil, err
-		}
-
-		for _, entry := range chunk {
-			
-			newEntry := ioDirEntry{
-				FName: entry.Name(),
-				FMode: entry.Type(),
-				FIsDir: entry.IsDir(),
-			}
-			info, err := entry.Info()
-			if err != nil {
-				logWarn("Failed to get info of", path+"/"+newEntry.Name() )
-				continue
-			}
-			newEntry.FModTime = info.ModTime()
-			newEntry.FSize = info.Size()
-
-			entries = append(entries, newEntry)
-		}
-
-		if len(chunk) < ioReadDirChunkSize {
-			// No more entries left to read
-			break
-		}
-
-		time.Sleep(ioReadDirChunkThrottle)
-	}
-
-	// Save cache
-	ioReadDirCacheMap[path] = entries
-
-	return ioConvertToFSDirEntry(entries), nil
-
-}
-
-func ioConvertToFSDirEntry(entries []ioDirEntry) []fs.DirEntry {
-    dirEntries := make([]fs.DirEntry, 0, len(entries))
-    for _, e := range entries {
-        dirEntries = append(dirEntries, &e)
-    }
-    return dirEntries
-}
-
-
-// Cache ReadFile
-var ioReadFileCache = NewLRUCache[string, []byte](ioReadFileCacheCap, ioReadFileThrottle)
-func ioReadFile(path string) ([]byte, error) {
-	p, ok := ioReadFileCache.Get(path)
-	if ok {
-		return p, nil
-	}
-
-	p, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check eligibility for cache
-	if len(p) <= ioReadFileCacheSizeLimit {
-		ioReadFileCache.Put(path, p)
-	}
-
-	return p, nil
-}
-*/
-
+// ioDirEntry represents file metadata and implements fs.FileInfo and fs.DirEntry.
 type ioDirEntry struct {
-	FName	string		`json:"name"`
-    FSize    int64       `json:"size"`
-    FMode    fs.FileMode `json:"mode"`
-    FModTime time.Time   `json:"modTime"`
-    FIsDir   bool        `json:"isDir"`
+	FName    string      `json:"name"`
+	FSize    int64       `json:"size"`
+	FMode    fs.FileMode `json:"mode"`
+	FModTime time.Time   `json:"modTime"`
+	FIsDir   bool        `json:"isDir"`
 }
 
-// Ensure implements fs.FileInfo
-var _ fs.DirEntry = (*ioDirEntry)(nil)
+// Ensure ioDirEntry implements fs.FileInfo and fs.DirEntry.
 var _ fs.FileInfo = (*ioDirEntry)(nil)
+var _ fs.DirEntry = (*ioDirEntry)(nil)
 
-func (e *ioDirEntry) Name() string {
-	return e.FName
-}
-func (e *ioDirEntry) Type() fs.FileMode {
-	return e.FMode
-}
-func (e *ioDirEntry) IsDir() bool {
-	return e.FIsDir
-}
-func (e *ioDirEntry) Info() (fs.FileInfo, error) {
-	return e, nil
-}
-func (e *ioDirEntry) Mode() fs.FileMode {
-	return e.FMode
-}
-func (e *ioDirEntry) Size() int64 {
-	return e.FSize
-}
-func (e *ioDirEntry) ModTime() time.Time {
-	return e.FModTime
-}
-func (e *ioDirEntry) Sys() any {
-	// Implement later when needed
-	return nil
-}
-
-
-
-
-
-
-
-
-
-
-
+func (e *ioDirEntry) Name() string              { return e.FName }
+func (e *ioDirEntry) Type() fs.FileMode           { return e.FMode }
+func (e *ioDirEntry) IsDir() bool                 { return e.FIsDir }
+func (e *ioDirEntry) Info() (fs.FileInfo, error)    { return e, nil }
+func (e *ioDirEntry) Mode() fs.FileMode           { return e.FMode }
+func (e *ioDirEntry) Size() int64                 { return e.FSize }
+func (e *ioDirEntry) ModTime() time.Time          { return e.FModTime }
+func (e *ioDirEntry) Sys() any                    { return nil } // Not used here
 
 // ioFile wraps a C file descriptor.
 type ioFile struct {
@@ -197,19 +60,20 @@ type ioFile struct {
 // ioOpenFile mimics os.OpenFile using C.open.
 // It takes a path, flags, and mode, and returns an ioFile.
 // Example function that mimics os.OpenFile using our fixed wrapper.
-func ioOpen(path string) (*ioFile, error) {
-	return ioOpenFile(path, os.O_RDONLY, 0)
-}
-func ioOpenFile(path string, flag int, mode os.FileMode) (*ioFile, error) {
-	cPath := C.CString(path)
-	defer C.free(unsafe.Pointer(cPath))
-	// Note: os.FileMode underlying type is uint32; we cast to C.mode_t.
+func ioOpenFile(path string, flag int, mode os.FileMode) (*os.File, error) {
+    cPath := C.CString(path)
+    defer C.free(unsafe.Pointer(cPath))
     m := uint32(mode)
     fd := C.my_open(cPath, C.int(flag), C.mode_t(m))
-	if fd < 0 {
-		return nil, syscall.Errno(C.get_errno())
-	}
-	return &ioFile{cFd: fd}, nil
+    if fd < 0 {
+        return nil, syscall.Errno(C.get_errno())
+    }
+    // Wrap the C file descriptor into an *os.File.
+    file := os.NewFile(uintptr(fd), path)
+    if file == nil {
+        return nil, fmt.Errorf("failed to create os.File")
+    }
+    return file, nil
 }
 
 // Write calls C.write on the underlying file descriptor.
@@ -261,11 +125,11 @@ func (f *ioFile) Stat() (fs.FileInfo, error) {
 	if ret != 0 {
 		return nil, syscall.Errno(C.get_errno())
 	}
-	return _ioConvertStat(&stat), nil
+	return convertStat(&stat), nil
 }
 
 // Helper: convert C.struct_stat to *ioDirEntry.
-func _ioConvertStat(stat *C.struct_stat) *ioDirEntry {
+func convertStat(stat *C.struct_stat) *ioDirEntry {
 	// Use st_mtim (Linux) for modification time.
 	modTime := time.Unix(int64(stat.st_mtim.tv_sec), int64(stat.st_mtim.tv_nsec))
 	return &ioDirEntry{
@@ -308,8 +172,8 @@ func ioReadFile(path string) ([]byte, error) {
 
 // ioWriteFile mimics os.WriteFile.
 // It opens (or creates/truncates) the file and writes data.
-func ioWriteFile(path string, data []byte, mode os.FileMode) error {
-	f, err := ioOpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+func ioWriteFile(path string, data []byte) error {
+	f, err := ioOpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
@@ -391,4 +255,57 @@ func ioReadDir(path string) ([]fs.DirEntry, error) {
 		entries = append(entries, entry)
 	}
 	return entries, nil
+}
+
+func main() {
+	// Demonstration of our functions.
+	testPath := "test.txt"
+	testData := []byte("Hello from CGO file IO!")
+
+	// Write file.
+	if err := ioWriteFile(testPath, testData); err != nil {
+		fmt.Println("ioWriteFile error:", err)
+		return
+	}
+	fmt.Println("Wrote file successfully.")
+
+	// Read file.
+	data, err := ioReadFile(testPath)
+	if err != nil {
+		fmt.Println("ioReadFile error:", err)
+		return
+	}
+	fmt.Println("Read data:", string(data))
+
+	// Stat file.
+	info, err := ioStat(testPath)
+	if err != nil {
+		fmt.Println("ioStat error:", err)
+		return
+	}
+	fmt.Printf("Stat: name=%s, size=%d, mode=%v, modTime=%v, isDir=%v\n",
+		info.Name(), info.Size(), info.Mode(), info.ModTime(), info.IsDir())
+
+	// Stat file.
+	_, err = ioStat("./nonexistentpath.txt")
+	if err != nil {
+		fmt.Println("ioStat error:", err)
+		fmt.Println("IsNotExist", os.IsNotExist(err))
+	}
+
+	// Read directory.
+	entries, err := ioReadDir(".")
+	if err != nil {
+		fmt.Println("ioReadDir error:", err)
+		return
+	}
+	fmt.Println("Directory entries:")
+	for _, e := range entries {
+		info, _ := e.Info()
+		fmt.Printf(" - %s (size: %d, mode: %v, modTime: %v, isDir: %v)\n",
+			e.Name(), info.Size(), info.Mode(), info.ModTime(), e.IsDir())
+	}
+
+	// Cleanup.
+	os.Remove(testPath)
 }

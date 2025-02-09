@@ -68,7 +68,7 @@ func mustJsonMarshal(data interface{}) string {
 }
 
 func fileExists(path string) bool {
-	_, err := os.Stat(path)
+	_, err := ioStat(path)
 	return err == nil
 }
 
@@ -191,20 +191,20 @@ func generateSelfSignedCert(root *rootCACertificate, certPath, keyPath string, a
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
 
 	// Write key.pem to the current directory
-	err = os.WriteFile(keyPath, keyPEM, 0600) // Use 0600 permissions for security
+	err = ioWriteFile(keyPath, keyPEM, 0600) // Use 0600 permissions for security
 	if err != nil {
 		return fmt.Errorf("Error writing key pem: %w", err)
 	}
 
 	// Write cert.pem to the current directory
-	err = os.WriteFile(certPath, certPEM, 0644) // Readable by others if needed
+	err = ioWriteFile(certPath, certPEM, 0644) // Readable by others if needed
 	if err != nil {
 		return fmt.Errorf("Error writing cert pem: %w", err)
 	}
 
 	// Write crt file for convenience
 	if root == nil {
-		err = os.WriteFile(certPath + ".crt", certPEM, 0644)
+		err = ioWriteFile(certPath + ".crt", certPEM, 0644)
 		if err != nil {
 			return fmt.Errorf("Error writing cert pem.crt: %w", err)
 		}
@@ -239,7 +239,7 @@ func loadRootCA(certPath, keyPath string) (*rootCACertificate) {
 func _loadRootCA(certPath, keyPath string) (*rootCACertificate, error) {
 
 	// Load certificate
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := ioReadFile(certPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read root certificate: %w", err)
 	}
@@ -253,7 +253,7 @@ func _loadRootCA(certPath, keyPath string) (*rootCACertificate, error) {
 	}
 
 	// Load private key
-	keyPEM, err := os.ReadFile(keyPath)
+	keyPEM, err := ioReadFile(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read root key: %w", err)
 	}
@@ -283,7 +283,7 @@ func _ensureTLSCertificate(certPath, keyPath string, addrs []string) error {
 	root := loadRootCA(ROOT_CERT_PEM, ROOT_KEY_PEM)
 
 	// Load the certificate file
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := ioReadFile(certPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Certificate doesn't exist, generate a new one
@@ -685,7 +685,7 @@ func formatShortTimestamp(since time.Time, at time.Time) string {
 }
 
 func getCRC32OfFile(fullpath string) (string, error) {
-	f, err := os.Open(fullpath)
+	f, err := ioOpen(fullpath)
 	if err != nil {
 		return "", err
 	}

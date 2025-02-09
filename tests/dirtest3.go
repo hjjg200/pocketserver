@@ -33,7 +33,7 @@ func ReadDirectory(root string, chunkSize int, sleepDuration time.Duration) {
 
 		var readDir func(path string)
 		readDir = func(path string) {
-			file, err := os.Open(path)
+			file, err := ioOpen(path)
 			if err != nil {
 				log.Fatalf("Error opening directory: %v\n", err)
 			}

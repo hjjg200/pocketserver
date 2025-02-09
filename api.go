@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"encoding/json"
-	"os"
 	"strings"
 )
 
@@ -70,7 +69,7 @@ func apiBakeMetadata(w http.ResponseWriter, r *http.Request) {
 
 	// ---
 	inFullpath := getUploadFullpath(info.Album, info.Base)
-	if _, err := os.Stat(inFullpath); err != nil {
+	if _, err := ioStat(inFullpath); err != nil {
 		http.Error(w, "Input file is not found", http.StatusBadRequest)
 		return
 	}

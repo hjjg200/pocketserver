@@ -199,7 +199,7 @@ func recursiveNewName(dir string, fn string) string {
 			fn1 = fmt.Sprintf("%s-%d%s", stem, i+1, ext)
 		}
 		// TODO
-		if _, err := os.Stat(filepath.Join(dir, fn1)); err == nil {
+		if _, err := ioStat(filepath.Join(dir, fn1)); err == nil {
 			continue
 		} else if os.IsNotExist(err) {
 			return fn1
@@ -232,11 +232,11 @@ func makeAuthCookie(val string, exp time.Time) *http.Cookie {
 
 func loadAuthCookies() {
 
-	data, err := os.ReadFile(AUTH_JSON)
+	data, err := ioReadFile(AUTH_JSON)
 	if err != nil {
 		logInfo("No auth cookies found")
 		data = []byte("{}")
-		must(os.WriteFile(AUTH_JSON, data, 0600))
+		must(ioWriteFile(AUTH_JSON, data, 0600))
 	}
 
 	gAuthInfo.ExpiryMap = make(map[string] time.Time)
@@ -266,7 +266,7 @@ func storeAuthCookies() error {
 	}
 
 	logInfo("Stored", len(gAuthInfo.ExpiryMap), "authenticated users")
-	return os.WriteFile(AUTH_JSON, data, 0600)
+	return ioWriteFile(AUTH_JSON, data, 0600)
 }
 
 // Authentication middleware

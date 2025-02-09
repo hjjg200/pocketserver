@@ -70,7 +70,7 @@ func main() {
 	uuidPrefix := fmt.Sprintf("hjjg200-dirtest4-%d", time.Now().UnixMilli())
 
 	// Open a log file
-	logFile, err := os.OpenFile(
+	logFile, err := ioOpenFile(
 		filepath.Base(os.Args[0])+".log",
 		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
@@ -131,7 +131,7 @@ func main() {
 				fmt.Fprintf(log.Writer(), "_%d ", id)
 
 				//
-				f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+				f, err := ioOpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 				if err != nil {
 					log.Fatalf("Goroutine %d: OpenFile error: %v\n", id, err)
 				}

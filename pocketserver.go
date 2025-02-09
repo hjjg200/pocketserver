@@ -251,9 +251,9 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := os.Stat(fullpathFile)
+	info, err := ioStat(fullpathFile)
 	if err != nil {
-		logHTTPRequest(r, -1, fullpathFile, "os.Stat err:", err)
+		logHTTPRequest(r, -1, fullpathFile, "ioStat err:", err)
 		http.Error(w, "Error doing stat of uploaded file", http.StatusInternalServerError)
 		return
 	}
@@ -394,7 +394,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		metaFullpath := filepath.Join(gAppInfo.MetadataDir, fullpath) + metaSuffix
 
 		// Check mod time
-		info, err := os.Stat(metaFullpath)
+		info, err := ioStat(metaFullpath)
 		if err != nil {
 			// TODO if client has image advise it to use it
 			logHTTPRequest(r, -1, "Failed to stat metadata err:", err)
@@ -407,7 +407,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Read metadata
-		meta, err := os.ReadFile(metaFullpath)
+		meta, err := ioReadFile(metaFullpath)
 		if err != nil || len(meta) == 0 {
 			logHTTPRequest(r, -1, "Failed to read metadata err:", err)
 			w.WriteHeader(http.StatusNotFound)
@@ -420,13 +420,13 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 			
 		// Open the file
-		file, err := os.Open(fullpath)
+		file, err := ioOpen(fullpath)
 		if os.IsNotExist(err) {
 			logHTTPRequest(r, -1, "view Not Found", fullpath)
 			w.WriteHeader(http.StatusNotFound)
 			return
 		} else if err != nil {
-			logHTTPRequest(r, -1, "view os.Open", fullpath,  err)
+			logHTTPRequest(r, -1, "view ioOpen", fullpath,  err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -700,7 +700,7 @@ func main() {
 	gMetadataManager = NewMetadataManager()
 	must(gMetadataManager.LoadDirCaches())
 	go func() {
-		dentries, err := os.ReadDir(gAppInfo.UploadDir)
+		dentries, err := ioReadDir(gAppInfo.UploadDir)
 		must(err)
 		dirs := []string{}
 		dirs = append(dirs, gAppInfo.UploadDir)

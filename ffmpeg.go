@@ -122,7 +122,7 @@ func findFFmpegInPath() (map[string]string, error) {
 
 	// Search each directory in PATH
 	for _, dir := range pathDirs {
-		files, err := os.ReadDir(dir)
+		files, err := ioReadDir(dir)
 		if err != nil {
 			continue // Skip directories that cannot be read
 		}
@@ -263,7 +263,7 @@ func makeFFmpegHandler() http.HandlerFunc {
     socketPath := filepath.Join(os.TempDir(), "pocketserver.ffmpeg.sock")
 
     // Clean up existing socket
-    if _, err := os.Stat(socketPath); err == nil {
+    if _, err := ioStat(socketPath); err == nil {
         os.Remove(socketPath)
     }
 
@@ -656,7 +656,7 @@ func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 
 		// Stat file
 		inPath := formatFFmpegArgPath(ffargs, inputIndex)
-		info, err := os.Stat(inPath)
+		info, err := ioStat(inPath)
 		if err != nil {
 			return fmt.Errorf("Failed to stat input %s: %w", inPath, err)
 		}
@@ -689,7 +689,7 @@ func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 		logDebug(FFMPEG_PREFIX, "ok sent", inputIndex)
 
 		// Stream input file
-		in, err := os.Open(inPath)
+		in, err := ioOpen(inPath)
 		if err != nil {
 			return fmt.Errorf("Failed to open input file %s: %w", inPath, err)
 		}

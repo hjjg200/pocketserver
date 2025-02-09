@@ -82,7 +82,7 @@ func (cache *metadataCache) updateJson() {
 	}
 	cache.json.Store(&data)
 
-	err = os.WriteFile(cache.mgr.formatDirCacheName(cache.dir), data, 0644)
+	err = ioWriteFile(cache.mgr.formatDirCacheName(cache.dir), data, 0644)
 	if err != nil {
 		logError("Failed to write cache file", cache.dir, "err:", err)
 	}
@@ -188,7 +188,7 @@ func (mgr *MetadataManager) LoadDirCaches() error {
 				panic("Cannot find cache for " + dir)
 			}
 
-			data, err := os.ReadFile(jsonPath)
+			data, err := ioReadFile(jsonPath)
 			if err != nil {
 				return err
 			}

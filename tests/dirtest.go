@@ -98,7 +98,7 @@ func measureReadDir(targetDir string, count int) time.Duration {
 }
 
 func readDirRecursively(dir string, j *int) error {
-	entries, err := os.ReadDir(dir)
+	entries, err := ioReadDir(dir)
 	if err != nil {
 		return err
 	}
