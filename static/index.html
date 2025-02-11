@@ -819,7 +819,6 @@ const mainWrap = document.body.querySelector(".main-wrap");
 
       // Save audio info for later restore
       storeAudioInfo();
-      updateMediaSessionPosition();
     },
     pause: async () => {
       gAudio.pause();
@@ -1043,21 +1042,17 @@ const mainWrap = document.body.querySelector(".main-wrap");
     try {
       await audioRetryHandle.promise;
       await mediaActionHandlers["play"]();
-    } catch(err) {
-      return;
-    }
+    } catch {}
 
   }
 
   gAudio.addEventListener("ended", () => {
-    // Revoke old blob
-    const oldSrc = gAudio.src;
-    if (false && oldSrc && oldSrc.startsWith("blob:")) {
-      URL.revokeObjectURL(oldSrc);
-    }
     mediaActionHandlers["nexttrack"]();
   });
-  gAudio.addEventListener('playing', setupMediaSessionControls);
+  gAudio.addEventListener('playing', () => {
+    setupMediaSessionControls();
+    updateMediaSessionPosition();
+  });
 
   createSlider(musicPlayerVolumeSlider, 0.5, true, volume => {
     gAudio.volume = volume;
@@ -1153,12 +1148,12 @@ const mainWrap = document.body.querySelector(".main-wrap");
       document.querySelectorAll('video').forEach(element => element.remove());
 
       let artwork = [
-        {src: artworkUrl, sizes: "96x96", type: "image/jpg",},
-        {src: artworkUrl, sizes: "128x128", type: "image/jpg",},
-        {src: artworkUrl, sizes: "192x192", type: "image/jpg",},
-        {src: artworkUrl, sizes: "256x256", type: "image/jpg",},
-        {src: artworkUrl, sizes: "384x384", type: "image/jpg",},
-        {src: artworkUrl, sizes: "512x512", type: "image/jpg",},
+        {src: artworkUrl, sizes: "96x96", type: "image/webp",},
+        {src: artworkUrl, sizes: "128x128", type: "image/webp",},
+        {src: artworkUrl, sizes: "192x192", type: "image/webp",},
+        {src: artworkUrl, sizes: "256x256", type: "image/webp",},
+        {src: artworkUrl, sizes: "384x384", type: "image/webp",},
+        {src: artworkUrl, sizes: "512x512", type: "image/webp",},
       ];
 
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -1530,18 +1525,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
   const memstats = serverInfoContainer.querySelector(".memstats");
   const checkServerInterval = 5 * 60 * 1000;
   let checkServerHandle;
-  window.checkServer = throttle(2000.0, async function () {
-
-    fetch('/ping') // prevent recursive
-      .then(response => {
-        serverInfoContainer.classList.remove("error");
-        gDEBUG = response.headers.has("X-Debug");
-      })
-      .catch(err => {
-        serverInfoContainer.classList.add("error");
-      });
-
-  });
+  window.checkServer = throttle(2000.0, fetch('/ping'));
   checkServerHandle = setInterval(checkServer, checkServerInterval);
 
   document.addEventListener("play", checkServer, true);
@@ -1569,14 +1553,29 @@ const mainWrap = document.body.querySelector(".main-wrap");
   }
 
   //
+  /*
+  const observer = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      try {
+        const url = new URL(entry.name);
+        if (url.pathname === "/ping") continue;
+
+      } catch {}
+    }
+  });
+  observer.observe({ entryTypes: ["resource"] });*/
+
   window.originalFetch = window.fetch;
   window.fetch = async function (input, init) {
     try {
       const response = await originalFetch(input, init);
       processPerformanceHeader(response.headers.get('X-Performance'));
+      serverInfoContainer.classList.remove("error");
+      gDEBUG = response.headers.has("X-Debug");
 
       return response;
     } catch (error) {
+      serverInfoContainer.classList.add("error");
       throw error; // Re-throw the error so fetch behaves as expected
     }
   };

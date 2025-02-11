@@ -12,10 +12,23 @@ var apiMux *http.ServeMux
 
 func init() {
 	apiMux = http.NewServeMux()
+
+	// Registered by others
+	apiMux.HandleFunc("/api/performance", func (w http.ResponseWriter, r *http.Request) {
+		if apiPerformance != nil {
+			apiPerformance(w, r)
+		}
+	})
+
+	// ---
 	apiMux.HandleFunc("/api/typeByName", apiTypeByName)
 	apiMux.HandleFunc("/api/manifest", makeApiManifest())
 	apiMux.HandleFunc("/api/bakeMetadata", apiBakeMetadata)
+
 }
+
+// Registered by others
+var apiPerformance http.HandlerFunc = nil
 
 func apiTypeByName(w http.ResponseWriter, r *http.Request) {
 	mt := mimeTypeByName(r.URL.Query().Get("name"))

@@ -113,16 +113,13 @@ yt-dlp -o 'YTDLP/%(channel)s/[%(upload_date)s]%(fulltitle).50s(%(id)s)/[%(upload
 
 ## TODO
 
-- Readlink Lstat
+- strace -f dirtest
 - -af "volume=2dB" -c:a copy
     - save gain to metadata
     - write to /tmp/pocketserver_ish/{crc of fullpath}.ext
-- gMutablePlaylist
-- priority
-    - sound check audio files
 - delegate to native ffmpeg that is first found in PATH and that is not pocketserver
     - on websocket ffmpeg error
-    - when input size is over 2GB
+    - when input size is over 1GB (2GB wasm limit)
 - FFmpeg piping (iSH <-> ffmpeg.wasm)
     - memory leak check
         - Brave freezes at the 31st audio file when uploading 31+ audio files

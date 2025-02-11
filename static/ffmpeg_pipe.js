@@ -655,20 +655,27 @@ window.ffmpegGetMetadata = async (buf, contentType) => {
 };
 var jobCounter = 0;
 async function pongBackMessageOfType(socket, typ) {
+  if (!Array.isArray(typ)) {
+    typ = [typ];
+  }
   const obj = JSON.parse(await waitForTextMessage(socket));
-  if (obj.type !== typ) {
+  if (false === typ.includes(obj.type)) {
     throw new Error(`Wrongly typed message, expected ${typ}, received ${obj.type}`);
   }
+  typ = obj.type;
   socket.send(JSON.stringify({ type: typ }));
   ffmpegLog("info", `Ping ${typ} from server, pong-backed ${typ}`);
-  return obj[typ] || null;
+  return [typ, obj[typ] || null];
 }
 async function cycleJobs(socket, signal) {
   try {
     while (true) {
       await pongBackMessageOfType(socket, "ready");
-      await pongBackMessageOfType(socket, "taskReady");
-      const ffargs = await pongBackMessageOfType(socket, "ffargs");
+      while (true) {
+        const [typ] = await pongBackMessageOfType(socket, ["taskReady", "wait"]);
+        if (typ === "taskReady") break;
+      }
+      const [, ffargs] = await pongBackMessageOfType(socket, "ffargs");
       let ffmpeg;
       const terminator = () => {
         if (ffmpeg) {

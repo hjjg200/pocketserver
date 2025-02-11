@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"mime"
 	"context"
@@ -567,12 +568,46 @@ func performanceMiddlewareFactory(config PerformanceConfig) func(http.Handler) h
 	}
 
 	//
+	var mu sync.Mutex
+	type RequestInfo struct {
+		URI			string		`json:"uri"`
+		RemoteAddr	string		`json:"remoteAddr"`
+		Since		time.Time	`json:"since"`
+		Elapsed		string		`json:"elapsed"`
+	}
+	requestMap := make(map[string]*RequestInfo)
+
+	apiPerformance = func(w http.ResponseWriter, r *http.Request) {
+
+		now := time.Now()
+
+		mu.Lock()
+		for _, info := range requestMap {
+			info.Elapsed = fmt.Sprint(now.Sub(info.Since))
+		}
+		b, err := json.MarshalIndent(map[string]interface{}{
+			"stats": performanceSnapshot(),
+			"requestInfos": requestMap,
+		}, "", "  ")
+		mu.Unlock()
+
+		if err != nil {
+			logHTTPRequest(r, -1, "failed to marshal json:", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(b)
+
+	}
+
+	//
 	logDebug(config.MaxConcurrentRequests, "max requests")
 	sem := NewSemaphore(config.MaxConcurrentRequests, config.RequestTimeout)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w0 http.ResponseWriter, r *http.Request) {
-
 			// Record the start time
 			start := time.Now()
 
@@ -582,8 +617,18 @@ func performanceMiddlewareFactory(config PerformanceConfig) func(http.Handler) h
 			ctx		 = context.WithValue(ctx, CONTEXT_KEY_REQUEST_START, start)
 			r 		 = r.WithContext(ctx)
 			w 		:= &responseWriter{ResponseWriter: w0, r: r}
-			
-			//logHTTPRequest(r, -1, "new request")
+			mu.Lock()
+			requestMap[rID] = &RequestInfo{
+				URI: r.URL.RequestURI(),
+				RemoteAddr: r.RemoteAddr,
+				Since: start,
+			}
+			mu.Unlock()
+			defer func() {
+				mu.Lock()
+				delete(requestMap, rID)
+				mu.Unlock()
+			}()
 
 			// Semaphore for limited environment
 			ok := sem.Acquire()

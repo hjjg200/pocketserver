@@ -13,6 +13,7 @@ import (
 	"strings"
 	"errors"
 	"time"
+	"sync"
 	"sync/atomic"
 
     "github.com/gorilla/websocket"
@@ -433,9 +434,11 @@ func makeFFmpegHandler() http.HandlerFunc {
         }
         defer wsConn.Close()
 
+		var mu sync.Mutex
+
         // Read messages in a loop from the browser
         for {
-
+			
 			err = pingPongFFmpegMessageOfType(wsConn, "ready", nil)
 			if err != nil {
 				logHTTPRequest(r, 599, FFMPEG_PREFIX, "websocket failed to get ready", err)
@@ -444,8 +447,37 @@ func makeFFmpegHandler() http.HandlerFunc {
 
 			logDebug(FFMPEG_PREFIX, "Browser is ready and is waiting")
 
-			// Wait for a job
-			pipeTask := <-ch
+			// Wait for a job or client abort
+			clientAbort := make(chan struct{})
+			taskReady := false
+			go func() {
+				for {
+					time.Sleep(5*time.Second)
+					mu.Lock()
+					if taskReady {
+						mu.Unlock()
+						return
+					}
+					err = pingPongFFmpegMessageOfType(wsConn, "wait", nil)
+					if err != nil {
+						clientAbort <-struct{}{}
+					}
+					mu.Unlock()
+				}
+			}()
+			var pipeTask *FFmpegPipeTask
+			select {
+			case v := <-ch:
+				pipeTask = v
+				mu.Lock()
+				taskReady = true
+				mu.Unlock()
+			case <-clientAbort:
+				logHTTPRequest(r, 599, FFMPEG_PREFIX, "Websocket closed:", err)
+				return
+			}
+			
+			// ---
 			pipeTask.WsConn.Store(wsConn) // store conn for abort handling
 
 			err = pingPongFFmpegMessageOfType(wsConn, "taskReady", nil)
@@ -453,28 +485,24 @@ func makeFFmpegHandler() http.HandlerFunc {
 				// Hand out fftask to another
 				logHTTPRequest(r, 399, FFMPEG_PREFIX, "websocket failed handing task out to another", err)
 				ch <-pipeTask
-
-				// Close websocket
 				return
 			}
-
-			// CONTINUE FOR ON ERROR FROM THIS POINT
 
 			logHTTPRequest(r, -1, FFMPEG_PREFIX, "received ffargs json", pipeTask.FFargsJson)
 
 			var wsErr *websocket.CloseError
 			var opErr *net.OpError
 			err = processFFmpegTask(wsConn, pipeTask)
-			if errors.As(err, &wsErr) || // Consider network errors as recoverable errors
+			if errors.As(err, &wsErr) ||
 				errors.As(err, &opErr) ||
 				errors.Is(err, net.ErrClosed) {
 				pipeTask.LogLineCh <-FFMPEG_WS_SOCKET_CLOSED
 				logHTTPRequest(r, 599, FFMPEG_PREFIX, "Websocket closed:", err)
-				continue
+				return
 			} else if err != nil {
 				pipeTask.LogLineCh <-FFMPEG_WS_SERVER_FAILED
 				logHTTPRequest(r, 599, FFMPEG_PREFIX, "Processing pipe task failed:", err)
-				continue
+				return
 			}
 
 			close(pipeTask.LogLineCh)
