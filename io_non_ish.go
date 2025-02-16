@@ -39,11 +39,21 @@ func ioLstat(path string) (fs.FileInfo, error) {
 func ioReadlink(path string) (string, error) {
 	return os.Readlink(path)
 }
+func ioPipe() (*ioFile, *ioFile, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	return ioFromOsFile(r), ioFromOsFile(w), nil
+}
 
 
 type ioFile struct {
 	f *os.File
 }
+
+var ioStdout = &ioFile{os.Stdout}
+var ioStderr = &ioFile{os.Stderr}
 
 func ioFromOsFile(f *os.File) *ioFile {
 	return &ioFile{f}

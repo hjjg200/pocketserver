@@ -29,9 +29,11 @@ func initFFmpeg() {
 	// Check if the program is invoked as "ffmpeg" or the main app
 	if (arg0 == "ffmpeg" || arg0 == "ffprobe") {
 
+		// Attempt to do websocket
 		err := subFFmpeg(os.Args)
 		if err != nil {
-			err = executeFFmpeg(os.Args, ioFromOsFile(os.Stdout), ioFromOsFile(os.Stderr))
+			// If failed go for native
+			err = executeFFmpeg(os.Args, ioStdout, ioStderr)
 			if err != nil {
 				logFatal(err)
 			}
@@ -846,9 +848,9 @@ func subFFmpeg(args []string) error {
         // 4) Output to stdout or stderr
         switch streamType {
         case "stdout":
-			fmt.Fprintln(os.Stdout, string(payload))
+			fmt.Fprintln(ioStdout, string(payload))
         case "stderr":
-			fmt.Fprintln(os.Stderr, string(payload))
+			fmt.Fprintln(ioStderr, string(payload))
         default:
             // Unknown stream type, decide what to do
 			return fmt.Errorf("Unknown stream type: %v", streamType)

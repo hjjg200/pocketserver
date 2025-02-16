@@ -274,6 +274,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return ret;
   }
 
+  // TODO use manifest to set limit
+  const bakeSem = new Semaphore(1);
   window.ffmpegServerSideBakeMetadata = async function(album, base, mimeType) {
 
     album = album || "";
@@ -281,14 +283,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const cmds = getEligibleCommands(mimeType, subMetaCommands);
     if (cmds.length === 0) return;
 
-    await fetch("/api/bakeMetadata", {
-      method: "POST",
-      body: JSON.stringify({
-        album,
-        base,
-        commands: cmds
-      })
-    });
+    try {
+      await bakeSem.acquire();
+      await fetch("/api/bakeMetadata", {
+        method: "POST",
+        body: JSON.stringify({
+          album,
+          base,
+          commands: cmds
+        })
+      });
+    } finally {
+      bakeSem.release();
+    }
 
   }
 
@@ -1525,7 +1532,7 @@ const mainWrap = document.body.querySelector(".main-wrap");
   const memstats = serverInfoContainer.querySelector(".memstats");
   const checkServerInterval = 5 * 60 * 1000;
   let checkServerHandle;
-  window.checkServer = throttle(2000.0, fetch('/ping'));
+  window.checkServer = throttle(2000.0, () => fetch('/ping'));
   checkServerHandle = setInterval(checkServer, checkServerInterval);
 
   document.addEventListener("play", checkServer, true);

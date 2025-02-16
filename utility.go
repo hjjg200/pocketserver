@@ -635,7 +635,6 @@ func resolveSymlink(fullpath string) (string) {
 		return fullpath
 	}
 
-	// If the file is a symlink, resolve it
 	if info.Mode()&os.ModeSymlink == 0 {
 		return fullpath
 	}
@@ -903,8 +902,8 @@ func (c *LRUCache[K, V]) Keys() []K {
 
 // TimeoutPipe wraps an os.Pipe with timeout detection and redirection.
 type TimeoutPipe struct {
-	r           *os.File       // Read end of the pipe.
-	w           *os.File       // Write end of the pipe.
+	r           *ioFile       // Read end of the pipe.
+	w           *ioFile       // Write end of the pipe.
 	redirect    io.Writer      // Destination for data read from the pipe.
 	timeout     time.Duration  // Timeout period.
 	timeoutChan chan struct{}  // Signals when a timeout occurs.
@@ -914,7 +913,7 @@ type TimeoutPipe struct {
 //  - timeoutChan (read-only) → Receives a signal when a timeout occurs.
 //  - writer (write-end of the pipe) → Where data should be written.
 func makeTimeoutPipe(redirect io.Writer, timeout time.Duration) (timeoutChan <-chan struct{}, writer *ioFile, err error) {
-	r, w, err := os.Pipe()
+	r, w, err := ioPipe()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -930,7 +929,7 @@ func makeTimeoutPipe(redirect io.Writer, timeout time.Duration) (timeoutChan <-c
 	// Start monitoring the read-end of the pipe.
 	go tp.monitor()
 
-	return tp.timeoutChan, ioFromOsFile(w), nil
+	return tp.timeoutChan, w, nil
 }
 
 // monitor continuously reads from the pipe and writes to the redirect writer.
@@ -962,11 +961,8 @@ func (tp *TimeoutPipe) monitor() {
 			select {
 			case <-timeout:
 				// If timeout occurs before reading data, send timeout signal.
-				select {
-				case tp.timeoutChan <- struct{}{}:
-				default: // Prevent blocking if already sent.
-				}
-				return 0, nil // Return without error to keep looping.
+				tp.timeoutChan <- struct{}{}
+				return 0, fmt.Errorf("timeout")
 			case <-readDone:
 				// Data was read, return results.
 				return bytesRead, readErr
@@ -978,7 +974,7 @@ func (tp *TimeoutPipe) monitor() {
 			if err == io.EOF {
 				return // Stop monitoring on EOF.
 			}
-			fmt.Fprintf(os.Stderr, "Read error: %v\n", err)
+			fmt.Fprintf(ioStderr, "Read error: %v\n", err)
 			return
 		}
 
@@ -986,8 +982,9 @@ func (tp *TimeoutPipe) monitor() {
 		if n > 0 && tp.redirect != nil {
 			_, werr := tp.redirect.Write(buf[:n])
 			if werr != nil {
-				fmt.Fprintf(os.Stderr, "Redirect write error: %v\n", werr)
+				fmt.Fprintf(ioStderr, "Redirect write error: %v\n", werr)
 			}
 		}
 	}
 }
+

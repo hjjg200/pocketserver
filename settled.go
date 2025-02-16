@@ -88,7 +88,7 @@ func logTimestamp(logLine string, items ...interface{}) {
 	for i, item := range items {
 		strItems[i] = fmt.Sprint(item)
 	}
-	fmt.Fprintln(os.Stderr, timestamp, logLine, strings.Join(strItems, " "))
+	fmt.Fprintln(ioStderr, timestamp, logLine, strings.Join(strItems, " "))
 }
 
 func logInfo(items ...interface{}) {

@@ -21,7 +21,6 @@ func init() {
 	})
 
 	// ---
-	apiMux.HandleFunc("/api/typeByName", apiTypeByName)
 	apiMux.HandleFunc("/api/manifest", makeApiManifest())
 	apiMux.HandleFunc("/api/bakeMetadata", apiBakeMetadata)
 
@@ -29,14 +28,6 @@ func init() {
 
 // Registered by others
 var apiPerformance http.HandlerFunc = nil
-
-func apiTypeByName(w http.ResponseWriter, r *http.Request) {
-	mt := mimeTypeByName(r.URL.Query().Get("name"))
-	if mt == "" {
-		mt = "application/octet-stream"
-	}
-	fmt.Fprint(w, mt)
-}
 
 var gApiManifest = struct{
 	FFmpegInputLimit		int64		`json:"ffmpegInputLimit"`
