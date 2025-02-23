@@ -25,6 +25,9 @@ type AppInfo struct {
 	UploadDir string
 	MetadataDir string
 	Debug bool
+	Debug2 string // TODO Later deprecate replace debug
+	Test string
+	TestVar string
 }
 
 var gAppInfo AppInfo
@@ -115,6 +118,26 @@ func logTime(items ...time.Time) time.Time {
 }
 func logDebug(items ...interface{}) {
 	if gAppInfo.Debug {
+
+		pc, f, l, _ := runtime.Caller(1)
+		dir			:= filepath.Base(filepath.Dir(f))
+		f			 = dir + "/" + filepath.Base(f)
+		fn			:= runtime.FuncForPC(pc)
+		n			:= filepath.Base(fn.Name())
+		caller		:= fmt.Sprintf("%s[%s:%d]", n, f, l)
+
+		var buf [64]byte
+		var id int64
+		read := runtime.Stack(buf[:], false)
+		stack := buf[:read]
+		idField := bytes.Fields(stack)[1] // Extract the second field: "goroutine 123 [running]"
+		fmt.Sscan(string(idField), &id)
+
+		logTimestamp(LOG_BLUE+"[debug] "+fmt.Sprint(id)+" "+caller+LOG_RESET, items...)
+	}
+}
+func logDebug2(key rune, items ...interface{}) {
+	if gAppInfo.Debug2 != "" && (key == 0 || strings.ContainsRune(gAppInfo.Debug2, key)) {
 
 		pc, f, l, _ := runtime.Caller(1)
 		dir			:= filepath.Base(filepath.Dir(f))

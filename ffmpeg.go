@@ -22,7 +22,7 @@ import (
 const FFMPEG_PREFIX = "[FFmpeg]"
 
 
-func initFFmpeg() {
+func checkRunAsFFmpeg() {
 	arg0	:= filepath.Base(os.Args[0])
 	arg0	= strings.TrimSuffix(arg0, filepath.Ext(arg0))
 
@@ -40,9 +40,11 @@ func initFFmpeg() {
 		}
 
 		os.Exit(0)
-	} else {
-		ffmpegHandler = makeFFmpegHandler()
 	}
+}
+
+func initFFmpegSocket() {
+	ffmpegHandler = makeFFmpegHandler()
 }
 
 var ffmpegSempahore = NewSemaphore(PERF_FFMPEG_MAX_CONCURRENT, 0)
@@ -51,14 +53,17 @@ func executeFFmpeg(args []string, stdout, stderr *ioFile) (error) {
 
 	ffmpegSempahore.Acquire()
 	defer ffmpegSempahore.Release()
+	defer logDebug2('f', "d", 10)
 
+	logDebug2('f', 10)
 	arg0 := filepath.Base(args[0])
 	arg0 = strings.TrimSuffix(arg0, filepath.Ext(arg0))
 
 	nativeFFs, err := findFFmpegInPath()
+	logDebug2('f', 20)
 	native, ok := nativeFFs[arg0]
 	if !ok || err != nil {
-		return fmt.Errorf("No native ffmpeg is found")
+		return fmt.Errorf("No native ffmpeg is found err: %w", err)
 	}
 	args[0] = native
 	if arg0 == "ffmpeg" {
@@ -88,6 +93,7 @@ func executeFFmpeg(args []string, stdout, stderr *ioFile) (error) {
 		// if output option is found
 		if outputPath != "" {
 			// Priortize over the given stdout
+			logDebug2('f', 25)
 			out, err := ioOpenFile(outputPath, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0644)
 			if err != nil {
 				return fmt.Errorf("Failed to create output file for ffprobe: %s %w", outputPath, err)
@@ -99,33 +105,16 @@ func executeFFmpeg(args []string, stdout, stderr *ioFile) (error) {
 
 	}
 
-	// Make the ffmpeg to be terminated if no stderr for 60 seconds
-	var stderrWriter io.Writer = stderr
-	if stderr == nil {
-		stderrWriter = io.Discard
-	}
-	timeout, wrappedStderr, err := makeTimeoutPipe(stderrWriter, time.Second * 60)
-	defer wrappedStderr.Close()
-
 	// ---
-	wait, terminator, err := _executeFFmpeg(
-		args,
-		stdout,
-		wrappedStderr,
-	)
-
+	wait, _, err := _executeFFmpeg(args, stdout, stderr)
 	if err != nil {
 		return fmt.Errorf("Failed to start ffmpeg process: %w", err)
 	}
 
-	select {
-	case <-wait:
-		return nil
-	case <-timeout:
-		logDebug("Running terminator for process")
-		terminator()
-		return fmt.Errorf("FFmpeg timed out")
-	}
+	<-wait
+	
+	logDebug2('f', 50)
+	return nil
 
 }
 
@@ -136,13 +125,18 @@ func findFFmpegInPath() (map[string]string, error) {
 	must(err)
 	pocketExecPath = resolveSymlink(pocketExecPath)
 
+	logDebug2('f', 10)
+
 	stems := []string{"ffmpeg", "ffprobe"}
 
 	// Get the PATH environment variable
 	pathEnv := os.Getenv("PATH")
+	logDebug2('f', 20)
 	if pathEnv == "" {
 		return nil, fmt.Errorf("$PATH is empty")
 	}
+
+	logDebug2('f', 30)
 
 	// Split PATH into directories
 	pathDirs := filepath.SplitList(pathEnv)
@@ -159,6 +153,7 @@ func findFFmpegInPath() (map[string]string, error) {
 	// Search each directory in PATH
 	for _, dir := range pathDirs {
 		files, err := ioReadDir(dir)
+		logDebug2('f', 40, dir, len(files), err)
 		if err != nil {
 			continue // Skip directories that cannot be read
 		}
@@ -219,6 +214,8 @@ type FFmpegArgs struct {
 //   - Use mime.TypeByExtension to check if extension is recognized
 //   - If recognized or not, if preceded by "-i", => input; else => output
 func parseFFmpegArgs(args []string) (*FFmpegArgs, error) {
+
+	logDebug2('f', 10)
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("error getting cwd: %w", err)
@@ -234,6 +231,7 @@ func parseFFmpegArgs(args []string) (*FFmpegArgs, error) {
 	lastWasDashI := false
 
 	// Ignore 0th argument
+	logDebug2('f', 20)
 	for i := 1; i < len(args); i++ {
 		arg := args[i]
 		if strings.HasPrefix(arg, "-") {
@@ -796,10 +794,12 @@ func processFFmpegInputs(wsConn *websocket.Conn, ffargs FFmpegArgs) error {
 func subFFmpeg(args []string) error {
 
 	// Parse arguments
+	logDebug2('f', 10)
 	ffargs, err := parseFFmpegArgs(args)
 	if err != nil {
 		return fmt.Errorf("Parse argument error: %w", err)
 	}
+	logDebug2('f', 20)
 
 	// If run as ffprobe and there is only output it means it is input
 	if strings.HasSuffix(args[0], "ffprobe") &&
@@ -814,14 +814,15 @@ func subFFmpeg(args []string) error {
 		return fmt.Errorf("Failed to marshal json: %w", err)
 	}
 
-	
 	// DO THE WORK VIA WEBSOCKET
 	// Connect to the UNIX socket
+	logDebug2('f', 30)
 	socketPath := filepath.Join(os.TempDir(), "pocketserver.ffmpeg.sock")
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
 		return fmt.Errorf("Dial error: %w", err)
 	}
+	logDebug2('f', 40)
 	defer conn.Close()
 
 	fmt.Fprint(conn, fmt.Sprintf("%s %d\n%s", "ffargsJson", len(ffargsJson), ffargsJson))

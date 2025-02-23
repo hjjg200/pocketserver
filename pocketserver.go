@@ -716,11 +716,10 @@ func main() {
 	// iSH compatibility
 	addDefaultMimeTypes()
 
-	// Determine if it is the main worker
-	initFFmpeg()
+	// Check if it is invoked as ffmpeg and if so run as ffmpeg
+	checkRunAsFFmpeg()
 
 	// Flags
-	fmt.Println()
 	parseFlag()
 
 	// Path
@@ -742,6 +741,13 @@ func main() {
 	must(os.MkdirAll(gAppInfo.UploadDir, 0755))
 	must(os.MkdirAll(gAppInfo.MetadataDir, 0755))
 
+	// Branch out to test if test is specified
+	if (gAppInfo.Test != "") {
+		runTests()
+		os.Exit(0)
+	}
+
+	// Start metadata manager
 	gMetadataManager = NewMetadataManager()
 	must(gMetadataManager.LoadDirCaches())
 	go func() {
@@ -776,7 +782,10 @@ func main() {
 	mux.HandleFunc("/editPlaylist", editPlaylistHandler)
 	mux.HandleFunc("/signout", signoutHandler)
 	mux.Handle("/api/", apiMux)
-	// MUX - WebSockets
+
+	// MUX - handlers that need initialization
+	// init ffmpeg http handler and the relevant unix socket
+	initFFmpegSocket()
 	mux.HandleFunc("/ws/ffmpeg", ffmpegHandler)
 
 	//

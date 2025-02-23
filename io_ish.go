@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"time"
 	//"sync"
-	"errors"
 	"os"
 	"io"
 	"io/fs"
@@ -28,6 +27,10 @@ import (
 #include <dirent.h>
 #include <errno.h>
 #include <poll.h>
+
+void reset_errno() {
+	errno = 0;
+}
 
 int get_errno() {
     return errno;
@@ -233,10 +236,7 @@ type ioFile struct {
 	cFd C.int
 }
 
-var ioErrTimeout = errors.New("Timeout")
-func ioIsTimeout(err error) bool {
-	return errors.Is(err, ioErrTimeout)
-}
+
 
 const IO_RETRY_INTERVAL = 10 * time.Millisecond
 const IO_RETRY_COUNT = 10
@@ -341,6 +341,10 @@ func (f *ioFile) Read(b []byte) (int, error) {
 			if n < 0 {
 				return 0, syscall.Errno(C.get_errno())
 			}
+            if n == 0 {
+                // Return io.EOF when no bytes are read.
+                return 0, io.EOF
+            }
 			return int(n), nil
 		})
 		
@@ -485,6 +489,8 @@ func ioWriteFile(path string, data []byte, mode os.FileMode) error {
 func _ioReaddirWrapper(dir *C.DIR) (*C.struct_dirent, error) {
     for i := 0; i < IO_RETRY_COUNT; i++ {
 		k, err := ioIgnoringEINTR2(func() (*C.struct_dirent, error) {
+			// Reset errno to 0 to know if an error occurred
+			C.reset_errno()
 			d := C.readdir(dir)
 			if d == nil {
 				// Check errno if readdir returns nil.
@@ -510,20 +516,36 @@ func _ioReaddirWrapper(dir *C.DIR) (*C.struct_dirent, error) {
 	return nil, ioErrTimeout
 }
 
-func ioReadDir(path string) ([]fs.DirEntry, error) {
+func ioReadDir(path string) (entries []fs.DirEntry, err error) {
 	cPath := C.CString(path)
 	defer C.free(unsafe.Pointer(cPath))
 	
-	dir := C.opendir(cPath)
-	if dir == nil {
-		return nil, syscall.Errno(C.get_errno())
+	var dir *C.DIR
+	dir, err = ioIgnoringEINTR2(func() (*C.DIR, error) {
+		ret := C.opendir(cPath)
+		if ret == nil {
+			return nil, syscall.Errno(C.get_errno())
+		}
+		return ret, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	defer C.closedir(dir)
-	
-	var entries []fs.DirEntry
+	defer func() {
+		err = ioIgnoringEINTR(func() error {
+			ret := C.closedir(dir)
+			if ret < 0 {
+				return syscall.Errno(C.get_errno())
+			}
+			return nil
+		})
+	}()
+
+	entries = make([]fs.DirEntry, 0)
 	count := 0
 	for {
-		d, err := _ioReaddirWrapper(dir)
+		var d *C.struct_dirent 
+		d, err = _ioReaddirWrapper(dir)
 		if err != nil {
 			if ioIsTimeout(err) {
 				continue
@@ -665,7 +687,9 @@ func ioReadlink(path string) (string, error) {
 func ioPipe() (r *ioFile, w *ioFile, err error) {
     var fds [2]C.int
     err = ioIgnoringEINTR(func() error {
-        if ret := C.pipe2(&fds[0], C.int(syscall.O_CLOEXEC)); ret != 0 {
+		ret := C.pipe2(&fds[0], C.int(syscall.O_CLOEXEC))
+		//logDebug2('p', "ret:", ret)
+		if ret != 0 {
             return syscall.Errno(C.get_errno())
         }
         return nil
@@ -673,6 +697,7 @@ func ioPipe() (r *ioFile, w *ioFile, err error) {
     if err != nil {
         return nil, nil, err
     }
+	//logDebug2('p', fds[0], fds[1])
     return &ioFile{"|0", fds[0]}, &ioFile{"|1", fds[1]}, nil
 }
 

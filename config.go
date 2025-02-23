@@ -23,7 +23,10 @@ func parseFlag() {
 	maxConcurrentFFmpeg := flag.Int(
 		"max-concurrent-ffmpeg", PERF_FFMPEG_MAX_CONCURRENT, "Maximum number of concurrent ffmpeg processes allowed")
 	debug := flag.Bool("debug", false, "Enable debug mode")
+	debug2 := flag.String("d", "_DISABLED_", "Enable debug channels, * for all debug channels")
 	password := flag.String("password", "", "Session password; when empty randomly generated")
+	test := flag.String("T", "", "Test options")
+	testVar := flag.String("Tv", "", "Test var")
 
 	// Parse flags
 	flag.Parse()
@@ -36,7 +39,10 @@ func parseFlag() {
 	}
 
 	//
-	gAppInfo.Debug = *debug
+	gAppInfo.Test = *test
+	gAppInfo.TestVar = *testVar
+	gAppInfo.Debug = *debug || *test != "" || *debug2 != "_DISABLED_"
+	gAppInfo.Debug2 = *debug2
 	logDebug("Debug is enabled")
 
 	//

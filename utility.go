@@ -630,7 +630,10 @@ func getInternetInterface() (string, error) {
 func resolveSymlink(fullpath string) (string) {
 
 	// Check if the file exists and is executable
+	logDebug2('i', fullpath)
 	info, err := ioLstat(fullpath)
+	logDebug2('i', "info", info)
+	logDebug2('i', "err", err)
 	if err != nil {
 		return fullpath
 	}
@@ -640,6 +643,8 @@ func resolveSymlink(fullpath string) (string) {
 	}
 		
 	target, err := ioReadlink(fullpath)
+	logDebug2('i', "target", target)
+	logDebug2('i', "err", err)
 	if err != nil {
 		return fullpath
 	}
@@ -899,92 +904,3 @@ func (c *LRUCache[K, V]) Keys() []K {
 	}
 	return keys
 }
-
-// TimeoutPipe wraps an os.Pipe with timeout detection and redirection.
-type TimeoutPipe struct {
-	r           *ioFile       // Read end of the pipe.
-	w           *ioFile       // Write end of the pipe.
-	redirect    io.Writer      // Destination for data read from the pipe.
-	timeout     time.Duration  // Timeout period.
-	timeoutChan chan struct{}  // Signals when a timeout occurs.
-}
-// makeTimeoutPipe creates a pipe that reads output, writes it to the redirect writer,
-// and sends a timeout signal if no data is read within `timeout`. It returns:
-//  - timeoutChan (read-only) → Receives a signal when a timeout occurs.
-//  - writer (write-end of the pipe) → Where data should be written.
-func makeTimeoutPipe(redirect io.Writer, timeout time.Duration) (timeoutChan <-chan struct{}, writer *ioFile, err error) {
-	r, w, err := ioPipe()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tp := &TimeoutPipe{
-		r:           r,
-		w:           w,
-		redirect:    redirect,
-		timeout:     timeout,
-		timeoutChan: make(chan struct{}, 1), // Buffered so send is non-blocking.
-	}
-
-	// Start monitoring the read-end of the pipe.
-	go tp.monitor()
-
-	return tp.timeoutChan, w, nil
-}
-
-// monitor continuously reads from the pipe and writes to the redirect writer.
-// If no data is read for `tp.timeout`, a timeout signal is sent.
-func (tp *TimeoutPipe) monitor() {
-	defer func() {
-		tp.w.Close()
-		tp.r.Close()
-	}()
-
-	buf := make([]byte, 1024)
-
-	for {
-		// Start a timeout timer
-		timeout := time.After(tp.timeout)
-
-		// Read data from the pipe
-		n, err := func() (int, error) {
-			// Use a select to either read data or trigger a timeout
-			readDone := make(chan struct{})
-			var bytesRead int
-			var readErr error
-
-			go func() {
-				bytesRead, readErr = tp.r.Read(buf)
-				close(readDone)
-			}()
-
-			select {
-			case <-timeout:
-				// If timeout occurs before reading data, send timeout signal.
-				tp.timeoutChan <- struct{}{}
-				return 0, fmt.Errorf("timeout")
-			case <-readDone:
-				// Data was read, return results.
-				return bytesRead, readErr
-			}
-		}()
-
-		// Handle read error
-		if err != nil {
-			if err == io.EOF {
-				return // Stop monitoring on EOF.
-			}
-			fmt.Fprintf(ioStderr, "Read error: %v\n", err)
-			return
-		}
-
-		// Write data to redirect writer
-		if n > 0 && tp.redirect != nil {
-			_, werr := tp.redirect.Write(buf[:n])
-			if werr != nil {
-				fmt.Fprintf(ioStderr, "Redirect write error: %v\n", werr)
-			}
-		}
-	}
-}
-
