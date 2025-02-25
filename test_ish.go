@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 	"os/signal"
-	"runtime/trace"
+	"runtime"
+    "runtime/pprof"
 	"syscall"
 	"os"
 	"sync"
@@ -28,8 +29,9 @@ func runTests() {
 		{ 'q', "Pipe block test", _testPipeBlock },
 	}
 
-	// Trace file (check non existent)
-	tpath := fmt.Sprintf("test%d-trace.txt", time.Now().Unix())
+	// Prof file (check non existent)
+	// go tool pprof -http=:8080 binary cpu.prof
+	tpath := fmt.Sprintf("test%d-prof", time.Now().Unix())
 	tf, err := ioOpenFile(tpath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	must(err)
 	must(tf.Close())
@@ -48,6 +50,7 @@ func runTests() {
 	fmt.Println()
 	fmt.Println("TEST")
 	fmt.Println("Test option is", gAppInfo.Test)
+	fmt.Println("Test var is", gAppInfo.TestVar)
 	i := 0
 	for {
 		i++
@@ -60,14 +63,14 @@ func runTests() {
 					// Truncate the trace file
 					tf, err = ioOpenFile(tpath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 					must(err)
-					must(trace.Start(tf))
+					must(pprof.StartCPUProfile(tf))
 					defer func() {
 						if r := recover(); r != nil {
 							logFatal("Recovered from", r)
 						}
 					}()
 					a.f()
-					trace.Stop()
+					pprof.StopCPUProfile()
 					must(tf.Close())
 				}()
 				found++
@@ -118,6 +121,19 @@ func _testFFmpeg() {
 			logFatal(err)
 		}
 		<-wait
+
+	} else if gAppInfo.TestVar == "2" {
+
+		runtime.LockOSThread()
+
+		args := []string{"ls"}
+		wait, _, err := _executeFFmpeg(args, ioStdout, ioStderr)
+		if err != nil {
+			logFatal(err)
+		}
+		<-wait
+
+		runtime.UnlockOSThread()
 
 	} else {
 

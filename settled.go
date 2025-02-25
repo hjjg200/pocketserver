@@ -24,6 +24,7 @@ type AppInfo struct {
 	UploadCount int // Total count of uploads since startup // TODO atomic
 	UploadDir string
 	MetadataDir string
+	TermSpawner bool
 	Debug bool
 	Debug2 string // TODO Later deprecate replace debug
 	Test string

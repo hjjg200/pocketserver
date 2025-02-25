@@ -66,24 +66,6 @@ pid_t start_ffmpeg(char *const args[], int stdout_fd, int stderr_fd) {
             }
         }
 
-        /**
-        // Tokenize the cmd string into args for execvp()
-        char *args[128];
-        char cmd_copy[4096];
-        snprintf(cmd_copy, sizeof(cmd_copy), "%s", cmd);
-
-        int i = 0;
-        char *token = strtok(cmd_copy, " ");
-        while (token != NULL && i < 127) {
-            args[i++] = token;
-            token = strtok(NULL, " ");
-        }
-        args[i] = NULL;  // Null-terminate the argument list
-
-        // Execute the command
-        execvp(args[0], args);
-         */
-
         execvp(args[0], args);
 
         // If execvp() fails:
@@ -119,7 +101,6 @@ int wait_process(pid_t pid) {
 // Sends SIGTERM (graceful) or SIGKILL (force) to a process
 int terminate_process(pid_t pid, int force) {
     if (pid <= 0) {
-        fprintf(stderr, "Invalid PID\n");
         return -1;
     }
 

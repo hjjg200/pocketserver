@@ -29,7 +29,7 @@ func _executeFFmpeg(args []string, stdout, stderr *ioFile) (<-chan struct{}, fun
 	logDebug2('f', 10)
 
 	//
-	args = append([]string{"nice"}, args...)
+	args = append([]string{"nice"}, args...) // nice -n 10~19
     cArgs := make([]*C.char, len(args)+1) // +1 for NULL termination
     for i, arg := range args {
         cArgs[i] = C.CString(arg)
@@ -45,20 +45,6 @@ func _executeFFmpeg(args []string, stdout, stderr *ioFile) (<-chan struct{}, fun
 		}
 		logDebug2('f', "d", 20)
 	}()
-
-    // Free allocated C strings
-
-	/*
-	// Call the C function
-	command := "nice " + joinCommandArgs(args) // nice -n 10~19
-	cCommand := C.CString(command)
-	defer C.free(unsafe.Pointer(cCommand))
-
-	pid := C.start_ffmpeg(cCommand, cStdout, cStderr)
-	if pid < 0 {
-		return nil, nil, fmt.Errorf("Failed to start ffmpeg process")
-	}
-	*/
 
 	logDebug2('f', 20)
 	pid := C.start_ffmpeg(cArgPtr, cStdout, cStderr)

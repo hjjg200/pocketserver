@@ -22,6 +22,8 @@ func parseFlag() {
 		"request-timeout", PERF_HTTP_TIMEOUT, "Timeout duration for requests (e.g., 30s, 1m)")
 	maxConcurrentFFmpeg := flag.Int(
 		"max-concurrent-ffmpeg", PERF_FFMPEG_MAX_CONCURRENT, "Maximum number of concurrent ffmpeg processes allowed")
+	termSpawner := flag.Bool(
+		"term-spawner-on-hang", false, "Do SIGKILL on Getppid() when the go app freezes")
 	debug := flag.Bool("debug", false, "Enable debug mode")
 	debug2 := flag.String("d", "_DISABLED_", "Enable debug channels, * for all debug channels")
 	password := flag.String("password", "", "Session password; when empty randomly generated")
@@ -38,6 +40,9 @@ func parseFlag() {
 		MaxConcurrentFFmpeg:   *maxConcurrentFFmpeg,
 	}
 
+	//
+	gAppInfo.TermSpawner = *termSpawner
+	
 	//
 	gAppInfo.Test = *test
 	gAppInfo.TestVar = *testVar

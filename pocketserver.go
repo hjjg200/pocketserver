@@ -713,14 +713,23 @@ func main() {
 	now := time.Now()
 	gAppInfo.Start = now
 
-	// iSH compatibility
-	addDefaultMimeTypes()
+	// Recover from unexpected panic
+	defer func() {
+		r := recover()
+		if r != nil {
+			logError("Recovered from", r)
+		}
+	}()
 
 	// Check if it is invoked as ffmpeg and if so run as ffmpeg
 	checkRunAsFFmpeg()
 
 	// Flags
 	parseFlag()
+
+	// iSH compatibility
+	addDefaultMimeTypes()
+	must(ioForkSupervisor())
 
 	// Path
 	must(changeToExecDir())

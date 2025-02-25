@@ -8,6 +8,10 @@ import (
 	"io/fs"
 )
 
+func ioForkSupervisor() error {
+	return nil
+}
+
 func ioReadFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }

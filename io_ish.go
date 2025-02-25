@@ -2,7 +2,6 @@
 // linux and 386
 // build for iSH
 
-
 package main
 
 import (
@@ -17,42 +16,8 @@ import (
 	"unsafe"
 )
 
-
 /*
-#include <stdlib.h>
-#include <stdio.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <dirent.h>
-#include <errno.h>
-#include <poll.h>
-
-void reset_errno() {
-	errno = 0;
-}
-
-int get_errno() {
-    return errno;
-}
-
-// Fixed-signature wrapper for open.
-int my_open(const char *pathname, int flags, mode_t mode) {
-    return open(pathname, flags, mode);
-}
-
-// waitFD waits for the file descriptor fd to become ready for the given events (e.g. POLLIN, POLLOUT)
-// within the timeout (in milliseconds). It loops on EINTR.
-int waitFD(int fd, short events, int timeout) {
-    struct pollfd pfd;
-    pfd.fd = fd;
-    pfd.events = events;
-    int ret;
-    do {
-        ret = poll(&pfd, 1, timeout);
-    } while(ret == -1 && errno == EINTR);
-    return ret;
-}
+#include "io_ish.h"
 */
 import "C"
 
@@ -64,6 +29,36 @@ const ioReadDirThrottle = time.Second * 10
 const ioReadFileThrottle = ioReadDirThrottle
 const ioReadFileCacheCap = 100
 const ioReadFileCacheSizeLimit = 32768
+
+func ioForkSupervisor() error {
+	var fd C.int
+	if gAppInfo.TermSpawner {
+		ppid := os.Getppid()
+		if ppid <= 0 {
+			logFatal("Invalid PPID", ppid)
+		}
+		fd = C.fork_supervisor(C.int(ppid))
+	} else {
+		fd = C.fork_supervisor(C.int(-1))	
+	}
+	if fd < 0 {
+		return syscall.Errno(C.get_errno())
+	}
+	f := &ioFile{"supervisor-1|", fd} // supervisor pipe write
+    go func() {
+        ticker := time.NewTicker(1 * time.Second)
+        defer ticker.Stop()
+
+        for range ticker.C {
+            if _, err := f.Write([]byte("ping\n")); err != nil {
+                // Log the error and possibly break out of the loop if necessary.
+            	logError("Heartbeat write error:", err)
+                break
+            }
+        }
+    }()
+	return nil
+}
 
 /*
 var ioReadDirMu sync.Mutex
@@ -220,27 +215,15 @@ func ioCastFileMode(stMode C.mode_t) fs.FileMode {
     return mode
 }
 
-
-
-
-
-
-
-
-
-
-
 // ioFile wraps a C file descriptor.
 type ioFile struct {
 	name string
 	cFd C.int
 }
 
-
-
 const IO_RETRY_INTERVAL = 10 * time.Millisecond
 const IO_RETRY_COUNT = 10
-const IO_EAGAIN_TIMEOUT_MS = 50
+const IO_EAGAIN_TIMEOUT_MS = 10
 
 var ioStdout = &ioFile{os.Stdout.Name(), C.STDOUT_FILENO}
 var ioStderr = &ioFile{os.Stderr.Name(), C.STDERR_FILENO}
@@ -329,6 +312,26 @@ func (f *ioFile) Write(b []byte) (int, error) {
 	return 0, fmt.Errorf("Failed to write to file: %s err: %w", f.name, ioErrTimeout)
 }
 
+// Sync calls C.fsync on the underlying file descriptor.
+func (f *ioFile) Sync() error {
+    for i := 0; i < IO_RETRY_COUNT; i++ {
+        err := ioIgnoringEINTR(func() (error) {
+            ret := C.fsync(f.cFd)
+            if ret < 0 {
+                return syscall.Errno(C.get_errno())
+            }
+            return nil
+        })
+        if err == syscall.EAGAIN {
+            err = _ioWaitWrite(f.cFd)
+            if ioIsTimeout(err) {
+                continue
+            }
+        }
+        return err
+    }
+    return fmt.Errorf("Failed to sync file: %s err: %w", f.name, ioErrTimeout)
+}
 
 // Read calls C.read.
 func (f *ioFile) Read(b []byte) (int, error) {
